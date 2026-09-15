@@ -3,7 +3,7 @@ window.PMS_CLIENT_CONFIG = {
   status: "ACTIVE_DEVELOPMENT",
   environment: "production",
   api: {
-    gasWebAppUrl: "https://script.google.com/macros/s/AKfycby7OuvBPd9hZ4OvJmmeydZR1R0XY8t8MUUCRqmmb65A25ab1mojFO_Rkh7vBZcgWb8a7Q/exec"
+    gasWebAppUrl: "https://script.google.com/macros/s/AKfycbyCO-gY5DcQQah1pfAr9NltJuU98uvhXLpncPhQ8YKj_z1NntqsOsFjkIyt90n0KwUm/exec"
   },
   staticMaster: {
     addressCsvFilename: "address_master.csv",
