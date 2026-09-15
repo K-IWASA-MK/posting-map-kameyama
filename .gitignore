@@ -1,0 +1,25 @@
+# Dependencies & Cache
+node_modules/
+.vite/
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+
+# Local Credentials / Secret Backups / District Instances
+.clasprc.json.local*
+scratch/
+.env
+.env.*
+.clasp.json
+deployment.json
+CNAME
+
+# External Raw Archives
+data/raw/
+data/raw_estat_r2/
+
+# Auditor Logs
+.agents/audit-log/

@@ -1,0 +1,1784 @@
+const $ = id => document.getElementById(id);
+
+// SEC-004: XSS対策用エスケープ関数
+window.escapeHtml = function(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
+// デバッグログ出力関数 (本番用: コンソールのみ出力)
+window.logDebug = function(msg) {
+  console.log("[DEBUG]", msg);
+};
+window.onerror = function(message, source, lineno, colno, error) {
+  if (message === "Script error.") return false;
+  logDebug(`ERROR: ${message} at ${source}:${lineno}:${colno}`);
+  return false;
+};
+window.onunhandledrejection = function(event) {
+  logDebug(`UNHANDLED PROMISE: ${event.reason}`);
+};
+
+let allPoints = [], rankingData = [];
+let _rankingFetched = false;  // ランキング遅延取得済みフラグ
+let _stockFetched = false;    // 在庫一覧取得済みフラグ
+let _stockData = [];          // 在庫一覧キャッシュデータ
+let currentCity = null;
+window.activeRankingPromise = null;
+window.globalPinStatus = { inProgress: [], completed: [] };
+window.lastPinStatusSync = 0;
+
+// ─── グローバル・ローディング二重制御ヘルパー ─────────────────────
+let _loadingCount = 0;
+
+function showLoading(label = 'CONNECTING...') {
+  _loadingCount++;
+  const loadingEl = $('loading');
+  if (loadingEl) {
+    const statusEl = $('loading-status');
+    if (statusEl) statusEl.textContent = label;
+    loadingEl.classList.remove('hidden');
+    loadingEl.classList.remove('opacity-0');
+  }
+}
+
+function hideLoading() {
+  _loadingCount = Math.max(0, _loadingCount - 1);
+  if (_loadingCount === 0) {
+    const loadingEl = $('loading');
+    if (loadingEl) {
+      loadingEl.classList.add('opacity-0');
+      setTimeout(() => {
+        if (_loadingCount === 0) {
+          loadingEl.classList.add('hidden');
+        }
+      }, 300);
+    }
+  }
+}
+
+function setLoadingProgress(pct, label) {
+  const bar = document.getElementById('loading-bar');
+  const txt = document.getElementById('loading-status');
+  if (bar) bar.style.width = pct + '%';
+  if (txt) {
+    txt.style.opacity = '0';
+    setTimeout(() => { txt.textContent = label; txt.style.opacity = '1'; }, 180);
+  }
+}
+
+// プレミアム・インタラクション・スキル (JS Touch Handler)
+document.addEventListener('touchstart', e => {
+  const el = e.target.closest('.btn-neu, .clickable-card, .nav-btn');
+  if (!el) return;
+  if (el.classList.contains('btn-neu')) el.classList.add('pressed-primary');
+  if (el.classList.contains('clickable-card')) el.classList.add('pressed-secondary');
+  if (el.classList.contains('nav-btn')) el.classList.add('pressed-nav');
+}, {passive: true});
+
+document.addEventListener('touchend', removePressed);
+document.addEventListener('touchcancel', removePressed);
+function removePressed() {
+  document.querySelectorAll('.pressed-primary, .pressed-secondary, .pressed-nav').forEach(el => {
+    el.classList.remove('pressed-primary', 'pressed-secondary', 'pressed-nav');
+  });
+}
+
+// =====================================
+// Phase 4-B: Global Pin Status Sync
+// =====================================
+window.fetchGlobalPinStatus = async function() {
+  const now = Date.now();
+  if (now - window.lastPinStatusSync < 10000) {
+    // スロットリング：10秒以内の連続フェッチをスキップ
+    return;
+  }
+  window.lastPinStatusSync = now;
+  try {
+    const res = await callApiPost('getGlobalPinStatus');
+    if (res && res.success) {
+      window.globalPinStatus.inProgress = res.inProgress || [];
+      window.globalPinStatus.completed = res.completed || [];
+      // 必要に応じて画面再描画
+      if (typeof window.refreshMainMapPins === 'function') {
+        window.refreshMainMapPins();
+      }
+    }
+  } catch (err) {
+    logDebug(`[fetchGlobalPinStatus] Error: ${err.message}`);
+  }
+};
+
+let pinActionPromiseChain = Promise.resolve();
+
+window.setPinInProgress = function(rowId, action) {
+  const numericRowId = parseInt(rowId, 10);
+  if (!isNaN(numericRowId) && window.globalPinStatus && Array.isArray(window.globalPinStatus.inProgress)) {
+    if (action === "remove") {
+      window.globalPinStatus.inProgress = window.globalPinStatus.inProgress.filter(id => id !== numericRowId);
+    } else if (action === "add") {
+      if (!window.globalPinStatus.inProgress.includes(numericRowId)) {
+        window.globalPinStatus.inProgress.push(numericRowId);
+      }
+    }
+  }
+
+  // Promise Chain によるFIFO直列通信制御
+  pinActionPromiseChain = pinActionPromiseChain.then(async () => {
+    try {
+      await callApiPost('setPinInProgress', { rowId: rowId, pinAction: action });
+    } catch (err) {
+      logDebug(`[setPinInProgress] Error: ${err.message}`);
+    }
+  });
+
+  return pinActionPromiseChain;
+};
+
+let appStartupTriggered = false;
+let mainAppVisible = false;
+
+function showMainApp() {
+  if (mainAppVisible || window.__contractExpired) return;
+
+  const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+  if (!userInfo.last && !userInfo.id) return;
+
+  mainAppVisible = true;
+  switchPage('settings');
+  $('app').classList.remove('hidden');
+  $('app').classList.remove('opacity-0');
+
+  const loadingEl = $('loading');
+  if (loadingEl) {
+    loadingEl.classList.add('opacity-0');
+    setTimeout(() => loadingEl.classList.add('hidden'), 400);
+  }
+}
+
+async function startApp() {
+  if (appStartupTriggered) return;
+  appStartupTriggered = true;
+
+  try {
+    fetchSystemSummary();
+
+    loadData(false).catch(err => {
+      console.warn("Background load error:", err);
+      logDebug("[loadData] Background error: " + (err ? err.message : err));
+    });
+
+    showMainApp();
+  } catch (err) {
+    console.error("Startup error:", err);
+    logDebug("Startup error: " + err.message);
+  }
+}
+
+function setSyncStatus(state) {
+  const statusEl = $('sync-status');
+  const textEl = $('sync-text');
+  if (!statusEl) return;
+  statusEl.className = 'w-2 h-2 rounded-full transition-all duration-300';
+
+  if (textEl) {
+    textEl.className = 'text-[8px] font-black uppercase tracking-[0.2em] transition-all duration-300';
+  }
+
+  if (state === 'online') {
+    statusEl.classList.add('bg-[#22c55e]', 'shadow-[0_0_8px_#22c55e]', 'animate-soft-pulse');
+    if (textEl) {
+      textEl.textContent = 'ONLINE';
+      textEl.classList.add('text-[#22c55e]');
+    }
+  } else if (state === 'offline') {
+    statusEl.classList.add('bg-[#f59e0b]', 'shadow-[0_0_8px_#f59e0b]');
+    if (textEl) {
+      textEl.textContent = 'OFFLINE';
+      textEl.classList.add('text-[#f59e0b]');
+    }
+  } else if (state === 'syncing') {
+    statusEl.classList.add('bg-[#2563eb]', 'shadow-[0_0_8px_#2563eb]', 'animate-pulse');
+    if (textEl) {
+      textEl.textContent = 'SYNCING';
+      textEl.classList.add('text-[#2563eb]', 'animate-pulse');
+    }
+  }
+}
+
+let isRegistering = false;
+let registrationError = false;
+function triggerBackgroundRegistration(profile) {
+  window.liffProfile = profile;
+  if (isRegistering) return Promise.resolve();
+  isRegistering = true;
+  window.isRegistering = true;
+  registrationError = false;
+  window.registrationError = false;
+
+  const idEl = $('storage-register-staff-id');
+  if (idEl) {
+    idEl.textContent = 'ID: 登録中...';
+    idEl.style.color = 'inherit';
+    idEl.style.cursor = 'default';
+    idEl.onclick = null;
+  }
+
+  logDebug("API START (初回登録・非同期)");
+  return callApiPost('registerStaff', {
+    lastName: profile.displayName,
+    firstName: "(LINE)",
+    lineUserId: profile.userId
+  }).then(res => {
+    isRegistering = false;
+    window.isRegistering = false;
+    logDebug("API OK (初回登録完了)");
+    if (res && res.success) {
+      const registeredInfo = {
+        last: profile.displayName,
+        first: "",
+        id: res.id,
+        lineUserId: profile.userId,
+        picture: profile.pictureUrl
+      };
+      localStorage.setItem('user_info', JSON.stringify(registeredInfo));
+      logDebug("Registered! Staff ID: " + res.id);
+
+      const updatedIdEl = $('storage-register-staff-id');
+      if (updatedIdEl) {
+        updatedIdEl.textContent = 'ID: ' + (res.id || '---');
+        updatedIdEl.style.color = 'inherit';
+        updatedIdEl.style.cursor = 'default';
+        updatedIdEl.onclick = null;
+      }
+
+      if (typeof renderSettings === 'function') {
+        renderSettings();
+      }
+      updateBottomNavVisibility();
+      showMainApp();
+    } else {
+      throw new Error("GAS registration returned success=false");
+    }
+  }).catch(err => {
+    isRegistering = false;
+    window.isRegistering = false;
+    registrationError = true;
+    window.registrationError = true;
+    logDebug("Background registration failed: " + err.message);
+
+    const updatedIdEl = $('storage-register-staff-id');
+    if (updatedIdEl) {
+      updatedIdEl.textContent = 'ID: 登録失敗 (タップして再試行)';
+      updatedIdEl.style.color = '#ef4444';
+      updatedIdEl.style.cursor = 'pointer';
+      updatedIdEl.onclick = () => {
+        triggerBackgroundRegistration(profile);
+      };
+    }
+
+    // エラー状態を描画するために再表示
+    if (typeof renderSettings === 'function') {
+      renderSettings();
+    }
+    showMainApp();
+  });
+}
+
+// 登録再試行用のグローバルハンドラーを公開
+window.retryRegistration = () => {
+  if (window.liffProfile) {
+    triggerBackgroundRegistration(window.liffProfile);
+  }
+};
+
+async function loadData(skipSync = false) {
+  logDebug("[loadData] START (Background)");
+
+  const tier1Promise = fetchTier1();
+
+  try {
+    if (!skipSync) {
+      setSyncStatus(navigator.onLine ? 'online' : 'offline');
+    }
+
+    if (!window.googleMapsApiLoaded) {
+      window.googleMapsApiLoaded = true;
+      callApiPost('getMapsApiKey').then(keyData => {
+        if (keyData && keyData.success && keyData.mapsApiKey) {
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${keyData.mapsApiKey}&callback=initMainMap&language=ja`;
+          script.async = true;
+          script.defer = true;
+          document.head.appendChild(script);
+        } else {
+          window.googleMapsApiLoaded = false;
+        }
+      }).catch(err => {
+        window.googleMapsApiLoaded = false;
+      });
+    }
+
+    logDebug("[loadData] Awaiting fetchSystemSummary in background...");
+    const data = await fetchSystemSummary();
+    logDebug("[loadData] fetchSystemSummary resolved.");
+
+    if (data && data.success) {
+      logDebug("[loadData] System Summary received: total=" + data.total + ", done=" + data.done + ", percent=" + data.percent);
+      updateStats(data);
+      prefetchRanking();
+    } else {
+      throw new Error(data ? data.message : "データが空です");
+    }
+  } catch (err) {
+    console.error("Background Load Error:", err);
+    logDebug(`[loadData] Background ERROR: ${err.message}`);
+    // バックグラウンドロードの失敗は画面をブロッキングしてフリーズさせず、ログ出力のみに留めます。
+  }
+
+  await tier1Promise;
+}
+
+// ランキングデータのバックグラウンド先読み関数
+function prefetchRanking() {
+  window.activeRankingPromise = callApiPost('getRanking')
+    .then(data => {
+      if (data && data.success) {
+        rankingData = data.ranking || [];
+        _rankingFetched = true;
+        logDebug("[prefetchRanking] Ranking pre-fetched in background.");
+        // 現在ランキングページを表示中であれば再描画
+        const activePage = document.querySelector('.page:not(.hidden)');
+        if (activePage && activePage.id === 'page-ranking' && typeof renderRanking === 'function') {
+          renderRanking();
+        }
+      }
+      return data;
+    })
+    .catch(err => {
+      logDebug("[prefetchRanking] Failed to pre-fetch ranking: " + err.message);
+      return null;
+    });
+}
+
+let numpadContext = null;
+
+function openNumpad(areaName, rowId, initialCount, isDoneToggle = false, checkbox = null) {
+  numpadContext = {
+    areaName,
+    rowId,
+    isDoneToggle,
+    checkbox,
+    currentVal: initialCount ? String(initialCount) : '0'
+  };
+
+  $('numpad-display').textContent = numpadContext.currentVal;
+
+  const modal = $('numpad-modal');
+  modal.classList.remove('pointer-events-none', 'opacity-0');
+  const content = modal.firstElementChild;
+  content.classList.remove('translate-y-full');
+}
+
+function closeNumpad() {
+  if (!numpadContext) return;
+
+  if (numpadContext.isDoneToggle && numpadContext.checkbox) {
+    numpadContext.checkbox.checked = false;
+  }
+
+  const modal = $('numpad-modal');
+  modal.classList.add('opacity-0', 'pointer-events-none');
+  const content = modal.firstElementChild;
+  content.classList.add('translate-y-full');
+
+  numpadContext = null;
+}
+
+
+window.triggerUISyncRefresh = async function() {
+  if (!allPoints || allPoints.length === 0) return; // let変数は window に付かないため直接参照
+  if (typeof getQueue !== 'function') return;
+
+  const currentAreaName = window.currentCityDetailAreaName;
+  if (!currentAreaName) return;
+
+  try {
+    const queue = await getQueue();
+    allPoints.forEach(p => {
+      // submitting（提出処理中）の場合はキュー状態での上書きを防止
+      if (p.syncStatus === 'submitting') return;
+
+      const found = queue.find(q => q.rowId === p.rowId && q.areaName === currentAreaName);
+      if (found) {
+        p.syncStatus = found.syncStatus || found.status; // 'pending' | 'sending' | 'failed'
+      } else {
+        delete p.syncStatus;
+      }
+    });
+
+    // 開いている詳細モーダルの再描画
+    if (window.currentPointDetailRowId) {
+      const p = allPoints.find(point => point.rowId === window.currentPointDetailRowId);
+      const modalContent = $('detail-modal-content');
+      if (p && p.syncStatus !== 'submitting' && modalContent && typeof renderDetailModalContent === 'function') {
+        modalContent.innerHTML = renderDetailModalContent(p);
+      }
+    }
+  } catch (err) {
+    console.error("triggerUISyncRefresh error:", err);
+  }
+};
+
+
+function pressNum(key) {
+  if (!numpadContext) return;
+
+  if (key === 'C') {
+    numpadContext.currentVal = '0';
+  } else if (key === 'OK') {
+    const valNum = parseFloat(numpadContext.currentVal) || 0;
+    const { areaName, rowId } = numpadContext;
+
+    const p = allPoints.find(point => point.rowId === rowId);
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const staffName = `${userInfo.last || ''} ${userInfo.first || ''}`.trim();
+    const staffId = userInfo.id || '';
+    const now = new Date();
+    const timeStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    numpadContext.isDoneToggle = false;
+
+    // GPS・カメラを先に開始（ユーザーのタップジェスチャーが生きている間に呼ぶ）
+    const gpsPromise = getGPSLocation();
+    // capturePhoto()内のinput.click()はここで同期的に実行される
+    // → テンキーを閉じる前にカメラが起動するため、裏画面が一瞬見える現象を防ぐ
+    const cameraPromise = capturePhoto();
+
+    closeNumpad(); // カメラ起動後にテンキーを閉じる
+
+    // 2. バックグラウンドで写真取得完了とGPS結果を待つ
+    (async () => {
+      let imageBlob = null;
+      try {
+        imageBlob = await cameraPromise;
+      } catch (err) {
+        console.error("Camera activation failed:", err);
+      }
+
+      // カメラがキャンセルされた場合は処理を中断
+      if (!imageBlob || typeof window.blobToBase64 !== 'function') {
+        console.warn("Photo capture cancelled or failed. Mission completion aborted.");
+        return;
+      }
+
+      let photoBase64 = '';
+      try {
+        photoBase64 = await window.blobToBase64(imageBlob);
+      } catch (err) {
+        console.warn("Photo Base64 conversion threw an error.", err);
+      }
+
+      if (!photoBase64) {
+        console.warn("Photo Base64 conversion returned empty data. Mission completion aborted.");
+        return;
+      }
+
+      // 3. 写真確定後に状態を更新し、即座にMISSION COMPLETED画面を生成（GPSは待たない）
+      if (p) {
+        p.isDone = true;
+        p.count = valNum;
+        p.staffName = staffName;
+        p.staffId = staffId; // Payload用に保持
+        p.completedAt = timeStr;
+        p.syncStatus = 'pending';
+        p.gpsStatus = 'pending';
+        p.photoStatus = 'OK';
+
+        p.tempPhotoUrl = URL.createObjectURL(imageBlob);
+        p.photoBase64 = photoBase64;
+
+        // モーダルを再描画（ここでMISSION COMPLETEDが表示される）
+        const modalContent = $('detail-modal-content');
+        if (modalContent) {
+          modalContent.innerHTML = renderDetailModalContent(p);
+        }
+      }
+
+      // 4. バックグラウンドでGPS結果を待機
+      let gps = await gpsPromise;
+      if (!gps.latitude || !gps.longitude) {
+        console.log("GPS empty after camera, retrying...");
+        gps = await getGPSLocation();
+      }
+
+      // GPS判定
+      const latNum = Number(gps?.latitude);
+      const lngNum = Number(gps?.longitude);
+      const hasValidGps =
+        Number.isFinite(latNum) &&
+        Number.isFinite(lngNum) &&
+        latNum !== 0 &&
+        lngNum !== 0 &&
+        latNum >= -90 && latNum <= 90 &&
+        lngNum >= -180 && lngNum <= 180;
+
+      if (p) {
+        if (!hasValidGps) {
+          console.warn("GPS acquisition failed or out of range.");
+          p.gpsStatus = 'NO';
+        } else {
+          p.gpsStatus = 'OK';
+          p.gps = `${gps.latitude},${gps.longitude}`;
+          p.latitude = gps.latitude;
+          p.longitude = gps.longitude;
+          p.accuracy = gps.accuracy || null;
+        }
+
+        // GPS状態が確定したのでモーダルのみ再描画（提出処理中はUIを上書きしない）
+        const modalContent = $('detail-modal-content');
+        if (modalContent && p.syncStatus !== 'submitting') {
+          modalContent.innerHTML = renderDetailModalContent(p);
+        }
+      }
+    })().catch(err => {
+      console.error("Async sync background task failed:", err);
+    });
+
+    return;
+  } else {
+    if (numpadContext.currentVal === '0') {
+      numpadContext.currentVal = String(key);
+    } else {
+      if (numpadContext.currentVal.length < 5) {
+        numpadContext.currentVal += String(key);
+      }
+    }
+  }
+
+  $('numpad-display').textContent = numpadContext.currentVal;
+}
+
+// モーダルの「この内容で提出する」ボタン押下時に呼ばれる
+async function submitMissionComplete(areaName, rowId) {
+  const p = (typeof allPoints !== 'undefined' && Array.isArray(allPoints) && allPoints.find(point => point.rowId === rowId)) ||
+            (typeof window.allPoints !== 'undefined' && Array.isArray(window.allPoints) && window.allPoints.find(point => point.rowId === rowId));
+  if (!p) return;
+
+  if (p.syncStatus === 'submitting') return;
+  p.syncStatus = 'submitting';
+
+  if (p.photoStatus !== 'OK' || !p.photoBase64) {
+    p.syncStatus = 'pending';
+    return;
+  }
+
+  const submitBtn = $('submit-mission-btn');
+  const cancelBtn = $('cancel-mission-btn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ 提出中...';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = true;
+  }
+
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+  try {
+    while (p.gpsStatus === 'pending') {
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    if (typeof enqueueSync === 'function') {
+      await enqueueSync({
+        areaName,
+        rowId: Number(rowId),
+        isDone:     true,
+        count:      p.count || 0,
+        latitude:   p.gpsStatus === 'OK' ? (p.latitude || '') : '',
+        longitude:  p.gpsStatus === 'OK' ? (p.longitude || '') : '',
+        accuracy:   p.gpsStatus === 'OK' ? (p.accuracy || null) : null,
+        gpsTimestamp: p.gpsStatus === 'OK' ? (p.gpsTimestamp || '') : '',
+        gpsStatusReason: p.gpsStatus || 'NO',
+        branchCode: localStorage.getItem('branch_name') || '',
+        areaId:     String(rowId),
+        photoBase64: p.photoBase64 || '',
+        staffName:  p.staffName || '',
+        staffId:    p.staffId || ''
+      });
+
+      while (true) {
+        if (typeof window.getRowStatus !== 'function') {
+          throw new Error("Sync check mechanism is missing.");
+        }
+        const status = await window.getRowStatus(Number(rowId));
+
+        if (status === null) {
+          // キューから消滅 ＝ GAS保存成功（データ送信成功＝ロック）
+          if (typeof window.setPinInProgress === 'function') {
+            window.setPinInProgress(rowId, "remove");
+          }
+          if (window.globalPinStatus) {
+            if (!window.globalPinStatus.completed.includes(rowId)) {
+              window.globalPinStatus.completed.push(rowId);
+            }
+            window.globalPinStatus.inProgress = window.globalPinStatus.inProgress.filter(id => id !== rowId);
+          }
+          if (typeof window.lockActivePinAndBubble === 'function') {
+            window.lockActivePinAndBubble(rowId);
+          }
+          break;
+        }
+        if (status === 'RETRY') {
+          throw new Error("GAS Save Failed");
+        }
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+
+    alert("✓ 提出致しました");
+    if (typeof closeDetailModal === 'function') {
+      closeDetailModal();
+    }
+  } catch (err) {
+    console.error("Submission failed:", err);
+    alert("提出に失敗しました: " + (err.message || "エラー"));
+    p.syncStatus = 'pending';
+  } finally {
+    const submitBtn = $('submit-mission-btn');
+    const cancelBtn = $('cancel-mission-btn');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '🚀 この内容で提出する';
+    }
+    if (cancelBtn) {
+      cancelBtn.disabled = false;
+    }
+  }
+}
+
+window.addEventListener('online', () => {
+  setSyncStatus('online');
+});
+
+window.addEventListener('offline', () => {
+  console.log("Device went offline.");
+  setSyncStatus('offline');
+});
+
+window.onPageEnter = function(id) {
+  if (id === 'settings') renderSettings();
+  if (id === 'ranking') initRankingPage();
+  if (id === 'storage-register') initStorageRegisterPage();
+  if (id === 'storage-list') initStorageListPage();
+  if (id === 'bulletin' && typeof fetchBulletinPosts === 'function') fetchBulletinPosts();
+};
+
+function initRankingPage() {
+  const container = $('ranking-list');
+  if (!_rankingFetched) {
+    if (container) {
+      container.innerHTML = `
+        <div style="border: 1px solid rgba(255,255,255,0.04);" class="premium-glass p-8 flex flex-col items-center justify-center text-center gap-3">
+          <div class="w-8 h-8 rounded-full border-2 border-[#2563eb]/40 border-t-[#2563eb] animate-spin"></div>
+          <p class="text-[10px] font-black text-white/40 uppercase tracking-[0.3em]">Loading Leaderboard...</p>
+        </div>`;
+    }
+    const p = window.activeRankingPromise || callApiPost('getRanking');
+    p.then(data => {
+      if (data && data.success) {
+        rankingData = data.ranking || [];
+        _rankingFetched = true;
+      }
+      if (typeof renderRanking === 'function') renderRanking();
+    }).catch(() => {
+      if (typeof renderRanking === 'function') renderRanking();
+    });
+  } else {
+    if (typeof renderRanking === 'function') renderRanking();
+  }
+}
+
+function updateStorageCountDisplay() {
+  const countInput = $('storage-register-count');
+  const countText = $('storage-register-count-text');
+  const countUnit = $('storage-register-count-unit');
+
+  if (!countInput || !countText) return;
+
+  const raw = countInput.value.replace(/,/g, '').replace(/枚/g, '').trim();
+  if (raw !== '' && !isNaN(parseInt(raw, 10))) {
+    countText.textContent = Number(raw).toLocaleString();
+    if (countUnit) countUnit.style.display = 'inline';
+  } else {
+    countText.textContent = '';
+    if (countUnit) countUnit.style.display = 'none';
+  }
+}
+
+window.updateStorageRegisterButtonText = function updateStorageRegisterButtonText() {
+  const btn = $('btn-storage-register-submit');
+  const countInput = $('storage-register-count');
+  if (!btn || !countInput) return;
+
+  const raw = countInput.value.replace(/,/g, '').replace(/枚/g, '').trim();
+  btn.textContent = raw ? 'チラシ枚数を更新する' : 'チラシ枚数を入力する';
+};
+
+function setupStorageRegisterInputFormatter(inputEl) {
+  if (!inputEl || inputEl.dataset.formatted) return;
+  inputEl.dataset.formatted = 'true';
+
+  const container = $('storage-register-count-container');
+  const display = $('storage-register-count-display');
+
+  if (container && display) {
+    container.addEventListener('click', function() {
+      inputEl.classList.remove('hidden');
+      display.classList.add('hidden');
+
+      const raw = inputEl.value.replace(/,/g, '').replace(/枚/g, '').trim();
+      inputEl.value = raw;
+      inputEl.focus();
+
+      if (typeof inputEl.setSelectionRange === 'function') {
+        inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+      }
+    });
+  }
+
+  inputEl.addEventListener('focus', function() {
+    if (display) display.classList.add('hidden');
+    inputEl.classList.remove('hidden');
+    const rawVal = this.value.replace(/,/g, '').replace(/枚/g, '').replace(/[^\d]/g, '');
+    this.value = rawVal;
+  });
+
+  inputEl.addEventListener('blur', function() {
+    inputEl.classList.add('hidden');
+    if (display) display.classList.remove('hidden');
+
+    const rawVal = this.value.replace(/,/g, '').replace(/枚/g, '').replace(/[^\d]/g, '');
+    if (!rawVal) {
+      this.value = '';
+    } else {
+      const num = parseInt(rawVal, 10);
+      this.value = isNaN(num) ? '' : String(num);
+    }
+
+    updateStorageCountDisplay();
+    updateStorageRegisterButtonText();
+  });
+
+  inputEl.addEventListener('input', function() {
+    const rawVal = this.value.replace(/,/g, '').replace(/枚/g, '').replace(/[^\d]/g, '');
+    this.value = rawVal;
+    updateStorageRegisterButtonText();
+  });
+}
+
+function updateStorageLocationDisplayText() {
+  const locSelect = $('storage-register-location');
+  const locText = $('storage-location-text');
+  if (!locSelect || !locText) return;
+
+  if (locSelect.value) {
+    locText.textContent = locSelect.value;
+  } else {
+    locText.textContent = '保管場所を選択';
+  }
+}
+
+window.updateStorageLocationDropdown = function updateStorageLocationDropdown(overrideCities = null) {
+  const locSelect = $('storage-register-location');
+  if (!locSelect) return;
+
+  if (!locSelect.dataset.listenerBound) {
+    locSelect.dataset.listenerBound = 'true';
+    locSelect.addEventListener('change', function() {
+      updateStorageLocationDisplayText();
+    });
+  }
+
+  const targetCities = (Array.isArray(overrideCities) && overrideCities.length > 0)
+    ? overrideCities
+    : (Array.isArray(tier1Cache) && tier1Cache.length > 0 ? tier1Cache : null);
+
+  locSelect.innerHTML = '';
+  const cityList = [];
+
+  if (Array.isArray(targetCities) && targetCities.length > 0) {
+    targetCities.forEach(c => {
+      const name = typeof c === 'string' ? c : (c.name || '');
+      if (name && !cityList.includes(name)) {
+        cityList.push(name);
+      }
+    });
+  }
+
+  if (cityList.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'データ読み込み中...';
+    locSelect.appendChild(opt);
+    updateStorageLocationDisplayText();
+    return;
+  }
+
+  cityList.forEach(city => {
+    const opt = document.createElement('option');
+    opt.value = city;
+    opt.textContent = city;
+    locSelect.appendChild(opt);
+  });
+
+  updateStorageLocationDisplayText();
+};
+
+function initStorageRegisterPage() {
+  const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+  const staffId = userInfo.id || '';
+  const staffName = `${userInfo.last || ''} ${userInfo.first || ''}`.trim();
+  const idEl = $('storage-register-staff-id');
+  const nameEl = $('storage-register-staff-name');
+
+  if (idEl) {
+    if (staffId) {
+      idEl.textContent = 'ID: ' + staffId;
+      idEl.style.color = 'inherit';
+      idEl.style.cursor = 'default';
+      idEl.onclick = null;
+    } else if (isRegistering) {
+      idEl.textContent = 'ID: 登録中...';
+      idEl.style.color = 'inherit';
+      idEl.style.cursor = 'default';
+      idEl.onclick = null;
+    } else if (registrationError) {
+      idEl.textContent = 'ID: 登録失敗 (タップして再試行)';
+      idEl.style.color = '#ef4444';
+      idEl.style.cursor = 'pointer';
+      idEl.onclick = async () => {
+        try {
+          idEl.textContent = 'ID: 再登録中...';
+          idEl.style.color = 'inherit';
+          const profile = await liff.getProfile();
+          triggerBackgroundRegistration(profile);
+        } catch(e) {
+          idEl.textContent = 'ID: 登録失敗 (タップして再試行)';
+          idEl.style.color = '#ef4444';
+        }
+      };
+    } else {
+      idEl.textContent = 'ID: ---';
+      idEl.style.color = 'inherit';
+      idEl.style.cursor = 'default';
+      idEl.onclick = null;
+    }
+  }
+  if (nameEl) nameEl.textContent = staffName || '---';
+
+  const countInput = $('storage-register-count');
+
+  updateStorageLocationDropdown();
+
+  if (staffId && countInput) {
+    callApiPost('getFlyerStock').then(data => {
+      if (data && data.success && Array.isArray(data.stocks)) {
+        _stockData = data.stocks;
+        _stockFetched = true;
+        const myStock = _stockData.find(s => String(s.staffId) === String(staffId));
+        if (myStock) {
+          const rawCount = parseInt(myStock.count, 10);
+          countInput.value = isNaN(rawCount) ? '' : String(rawCount);
+          const locSelect = $('storage-register-location');
+          if (locSelect && myStock.location) {
+            locSelect.value = myStock.location;
+            updateStorageLocationDisplayText();
+          }
+        }
+        updateStorageCountDisplay();
+        updateStorageRegisterButtonText();
+      }
+    }).catch(err => {
+      console.warn('Failed to fetch staff stock on entry:', err);
+      updateStorageCountDisplay();
+      updateStorageRegisterButtonText();
+    });
+  }
+
+  setupStorageRegisterInputFormatter(countInput);
+  updateStorageCountDisplay();
+  updateStorageRegisterButtonText();
+}
+
+function initStorageListPage() {
+  const listContainer = $('storage-list-container');
+
+  if (!_stockFetched) {
+    if (listContainer) {
+      listContainer.innerHTML = `
+        <div style="border: 1px solid rgba(255,255,255,0.04);" class="premium-glass p-8 flex flex-col items-center justify-center text-center gap-3">
+          <div class="w-8 h-8 rounded-full border-2 border-[#2563eb]/40 border-t-[#2563eb] animate-spin"></div>
+          <p class="text-[10px] font-black text-white/40 uppercase tracking-[0.3em]">Loading Inventory...</p>
+        </div>`;
+    }
+    callApiPost('getFlyerStock').then(data => {
+      if (data && data.success) {
+        _stockData = data.stocks || [];
+        _stockFetched = true;
+        if (typeof renderStorageList === 'function') renderStorageList(_stockData);
+      } else {
+        if (listContainer) {
+          listContainer.innerHTML = `
+            <div style="border: 1px solid rgba(255,255,255,0.04);" class="premium-glass p-8 flex flex-col items-center justify-center text-center gap-3">
+              <span class="text-2xl">⚠️</span>
+              <p class="text-sm font-black text-white/60">データ取得に失敗しました</p>
+            </div>`;
+        }
+      }
+    }).catch(err => {
+      if (listContainer) {
+        listContainer.innerHTML = `
+          <div style="border: 1px solid rgba(255,255,255,0.04);" class="premium-glass p-8 flex flex-col items-center justify-center text-center gap-3">
+            <span class="text-2xl">⚠️</span>
+            <p class="text-sm font-black text-white/60">エラーが発生しました</p>
+          </div>`;
+      }
+    });
+  } else {
+    if (typeof renderStorageList === 'function') renderStorageList(_stockData);
+  }
+}
+
+
+// 在庫登録フォームの処理
+window.submitFlyerStock = async function() {
+  const locSelect = $('storage-register-location');
+  const countInput = $('storage-register-count');
+  const btn = $('btn-storage-register-submit');
+
+  if (!locSelect || !countInput || !btn) return;
+
+  const location = locSelect.value;
+  const count = parseInt(String(countInput.value).replace(/,/g, '').replace(/枚/g, ''), 10);
+
+  if (!location) {
+    alert("保管場所を選択してください。");
+    return;
+  }
+  if (isNaN(count) || count < 0) {
+    alert("正しい枚数を入力してください。");
+    return;
+  }
+
+  const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+  const staffId = userInfo.id || '';
+  const staffName = `${userInfo.last || ''} ${userInfo.first || ''}`.trim();
+
+  if (!staffId || !staffName) {
+    alert("ID情報がありません。ID登録を行ってください。");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "更新中...";
+
+  try {
+    const res = await callApiPost('updateFlyerStock', {
+      location: location,
+      count: count,
+      staffName: staffName,
+      staffId: staffId
+    });
+
+    if (res && res.success) {
+      alert("✓ チラシ枚数を更新しました");
+      _stockFetched = false; // キャッシュを無効化し、次回遷移時に最新の在庫を取得させる
+    } else {
+      alert("更新に失敗しました: " + (res.message || "エラー"));
+    }
+  } catch (e) {
+    alert("エラーが発生しました: " + e.message);
+  } finally {
+    const btn = $('btn-storage-register-submit');
+    if (btn) {
+      btn.disabled = false;
+      if (typeof updateStorageRegisterButtonText === 'function') {
+        updateStorageRegisterButtonText();
+      } else {
+        btn.textContent = "チラシ枚数を更新する";
+      }
+    }
+  }
+};
+
+
+
+let lastSummaryData = null;
+
+/**
+ * updateStats(summaryData) - 表示専用関数 (SystemSummaryService / AddressMasterService 参照)
+ */
+function updateStats(summaryData = null) {
+  const countEl = $('header-count');
+  const pctEl = $('header-pct');
+
+  if (summaryData) {
+    lastSummaryData = summaryData;
+  } else {
+    summaryData = lastSummaryData;
+  }
+
+  if (!summaryData) {
+    if (countEl) countEl.textContent = '0/ 0';
+    if (pctEl) pctEl.textContent = '0%';
+    return;
+  }
+
+  // data/address_master.csv の件数を総エリア数 (total) のSSOTとして使用
+  let total = 0;
+  if (typeof AddressMasterService !== 'undefined' && AddressMasterService.getInstance) {
+    const masterCache = AddressMasterService.getInstance().cache;
+    if (masterCache && Array.isArray(masterCache) && masterCache.length > 0) {
+      total = masterCache.length;
+    }
+  }
+
+  const done = typeof summaryData.done === 'number' ? summaryData.done : 0;
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  if (summaryData.districtName) {
+    window.__districtName = summaryData.districtName;
+    document.title = "POSTING MAP";
+  }
+
+  if (countEl) countEl.textContent = `${done}/ ${total}`;
+  if (pctEl) pctEl.textContent = `${percent}%`;
+
+  // AddressMasterServiceが未ロードの場合は非同期取得後に自動再反映
+  if (total === 0 && typeof AddressMasterService !== 'undefined' && AddressMasterService.getInstance) {
+    AddressMasterService.getInstance().getAll().then(master => {
+      if (master && master.length > 0 && lastSummaryData) {
+        updateStats(lastSummaryData);
+      }
+    }).catch(() => {});
+  }
+}
+
+let _systemSummaryPromise = null;
+
+async function fetchSystemSummary(forceRefresh = false) {
+  if (_systemSummaryPromise && !forceRefresh) {
+    return _systemSummaryPromise;
+  }
+
+  _systemSummaryPromise = (async () => {
+    try {
+      const res = await callApiPost('getSystemSummary');
+      if (res && (res.code === 'CONTRACT_EXPIRED' || res.contractStatus === 'EXPIRED' || res.isExpired === true)) {
+        window.__contractExpired = true;
+        if (typeof setSyncStatus === 'function') setSyncStatus('offline');
+        const statusEl = $('loading-status');
+        if (statusEl) statusEl.textContent = '接続エラー: 接続できません。';
+        const appEl = $('app');
+        if (appEl) { appEl.classList.add('hidden'); appEl.classList.add('opacity-0'); }
+        const loadingEl = $('loading');
+        if (loadingEl) { loadingEl.classList.remove('hidden'); loadingEl.classList.remove('opacity-0'); }
+        return res;
+      }
+      if (res && res.success) {
+        updateStats(res);
+        return res;
+      }
+    } catch (err) {
+      console.warn("fetchSystemSummary failed:", err);
+    }
+    return null;
+  })();
+
+  return _systemSummaryPromise;
+}
+
+/**
+ * fetchTier1() - Tier 1 市町村サマリー取得
+ */
+let tier1Cache = null;
+
+async function fetchTier1() {
+  try {
+    const cities = await AddressMasterService.getInstance().getCities();
+
+    if (cities && cities.length > 0) {
+      tier1Cache = cities;
+
+
+      if (typeof updateStorageLocationDropdown === 'function') {
+        updateStorageLocationDropdown(tier1Cache);
+      }
+
+      if (typeof renderAreas === 'function') {
+        renderAreas();
+      }
+
+      if (lastSummaryData) {
+        updateStats(lastSummaryData);
+      }
+
+      return tier1Cache;
+    }
+  } catch (err) {
+    console.warn("fetchTier1 failed:", err);
+  }
+
+  return null;
+}
+
+
+async function safeInitApp() {
+  // LIFF SDK が内部でトークン交換用に生成する非表示 iframe 内での二重実行（アクセストークン失効）を完全に防止するガード
+  if (window !== window.top) {
+    console.log("[DEBUG] Running inside iframe, skipping safeInitApp.");
+    return;
+  }
+
+  logDebug("safeInitApp invoked.");
+  console.log("POSTING MAP PRO safeInitApp started.");
+
+  // URLに死んだパラメータが残っている、かつ初期化前（または失敗時）の保険
+  const urlParams = new URLSearchParams(window.location.search);
+  const hasOAuthParams = urlParams.has('code') || urlParams.has('liff.state');
+  const isReturningFromLogin = sessionStorage.getItem('liff_initializing') === 'true';
+
+  // liff.login()で戻ってきた場合（?code= あり & フラグあり）→ LIFFに正常処理させる
+  // 孤立した ?code=（フラグなし）→ クリーンURLでやり直し（スタック防止）
+  if (hasOAuthParams && !isReturningFromLogin) {
+      sessionStorage.setItem('liff_initializing', 'true');
+      window.location.href = window.location.origin + window.location.pathname;
+      return;
+  }
+  // ※ フラグはここでは削除しない。ログイン確認成功後（isLoggedIn()=true）に削除する。
+
+  // クライアント設定(PMS_CLIENT_CONFIG)からLIFF IDを取得、なければホスト名からフォールバック
+  const liffId = (window.PMS_CLIENT_CONFIG && window.PMS_CLIENT_CONFIG.line && window.PMS_CLIENT_CONFIG.line.liffId);
+  if (!liffId) {
+    throw new Error("LIFF ID missing in client configuration.");
+  }
+
+  startApp();
+
+  if (typeof liff !== 'undefined') {
+    try {
+      logDebug("LIFF INIT START");
+      await new Promise(r => setTimeout(r, 50));
+
+      const liffInitPromise = liff.init({ liffId: liffId });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("LINEログインの応答がタイムアウトしました(5秒)")), 5000)
+      );
+
+      await Promise.race([liffInitPromise, timeoutPromise]);
+      logDebug("LIFF INIT OK");
+      setLoadingProgress(35, 'AUTHENTICATED');
+
+      logDebug("LOGIN CHECK");
+      if (liff.isLoggedIn()) {
+        logDebug("LOGIN OK");
+        sessionStorage.removeItem('liff_initializing');
+
+        let userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+
+        if (userInfo.id) {
+          liff.getProfile().then(profile => {
+            logDebug("Background profile refresh OK");
+            userInfo.lineUserId = profile.userId;
+            userInfo.picture = profile.pictureUrl;
+            localStorage.setItem('user_info', JSON.stringify(userInfo));
+
+            if (typeof renderSettings === 'function') {
+              renderSettings();
+            }
+          }).catch(err => {
+            console.warn("Background profile refresh failed:", err);
+          });
+
+        } else {
+          try {
+            logDebug("PROFILE START");
+            const profile = await liff.getProfile();
+            logDebug("PROFILE OK");
+
+            try {
+              const cleanUrl = window.location.origin + window.location.pathname + window.location.search.replace(/[\?&](code|liff\.state)=[^&]*/g, '');
+              window.history.replaceState({}, document.title, cleanUrl);
+              logDebug("OAuth query parameters cleaned from address bar via history.replaceState (Safe Delay)");
+            } catch (e) {
+              console.warn("Failed to clean OAuth query parameters:", e);
+            }
+
+            setLoadingProgress(100, 'READY');
+            console.log(profile);
+
+            const initialUserInfo = {
+              last: profile.displayName || '',
+              first: '',
+              id: '',
+              lineUserId: profile.userId,
+              picture: profile.pictureUrl || ''
+            };
+            localStorage.setItem('user_info', JSON.stringify(initialUserInfo));
+
+            if (typeof renderSettings === 'function') {
+              renderSettings();
+            }
+            updateBottomNavVisibility();
+            showMainApp();
+
+            triggerBackgroundRegistration(profile);
+          } catch (err) {
+            console.error("LIFF PROFILE ERROR", err);
+            logDebug("LIFF PROFILE ERROR: " + err.message);
+
+            if (err.message && err.message.toUpperCase().includes("REVOKED")) {
+              logDebug("Access token revoked detected. Forcing re-login...");
+              liff.logout();
+              liff.login({ redirectUri: window.location.href });
+              return;
+            }
+
+            $('loading-status').textContent = "起動エラー: " + err.message;
+          }
+        }
+      } else {
+        // LINEログイン処理中（OAuthコールバックのパラメータがある）なら、手動ログイン画面を出さずに少し待機して再チェックする
+        const urlParams = new URLSearchParams(window.location.search);
+        const isProcessing = urlParams.has('code') || urlParams.has('liff.state');
+        if (isProcessing) {
+          logDebug("LINE login is processing in background. Retrying login check in 1.5s...");
+          setTimeout(() => {
+            if (liff.isLoggedIn()) {
+              logDebug("Retried Login: OK");
+              safeInitApp(); // 再起動してメインフローへ入る
+            } else {
+              logDebug("Retried Login: FAIL. Redirecting to LINE Login automatically...");
+              sessionStorage.setItem('liff_initializing', 'true');
+              liff.login();
+            }
+          }, 1500);
+          return;
+        }
+
+        logDebug("Not logged in. Redirecting to LINE Login automatically...");
+        sessionStorage.setItem('liff_initializing', 'true');
+        liff.login();
+      }
+    } catch (err) {
+      console.error("LIFF Init Error:", err);
+      logDebug("LIFF Error: " + err.message);
+      $('loading-status').textContent = "起動エラー: " + err.message;
+    }
+  } else {
+    logDebug("Running in standalone web browser. Blocked.");
+    $('loading-status').textContent = "エラー: LINEアプリ内から起動してください。";
+  }
+}
+
+// defer属性によりDOM解析完了後・LIFF SDK読み込み後に実行される（DOMContentLoaded待ち不要）
+safeInitApp();
+
+// 規約・ライセンスデータ
+const ID_INFO_DATA = {
+  terms: {
+    title: 'Terms of Service',
+    body: `
+      <div class="space-y-4 text-[11px] leading-relaxed text-white/50 select-none">
+        <p>POSTING MAP は、<br>認証された配布員・管理者向けの<br><span class="text-white font-bold">FIELD OPERATIONS SYSTEM</span> です。</p>
+
+        <div class="space-y-1">
+          <p class="text-white/70 font-black">本システムは：</p>
+          <div class="pl-3 text-white/40 space-y-0.5">
+            <div>・配布進捗</div>
+            <div>・エリア管理</div>
+            <div>・GPSログ</div>
+            <div>・活動データ</div>
+            <div>・ランキング</div>
+          </div>
+          <p class="text-white/40">をリアルタイム管理します。</p>
+        </div>
+
+        <div class="space-y-1">
+          <p class="text-white/70 font-black">本システムの：</p>
+          <div class="pl-3 text-white/40 space-y-0.5">
+            <div>・無断複製</div>
+            <div>・再配布</div>
+            <div>・不正利用</div>
+            <div>・地域外利用</div>
+          </div>
+          <p class="text-white/40">を禁止します。</p>
+        </div>
+
+        <p class="text-white/40 pt-2 border-t border-white/5">各地域ライセンスは、<br>契約支部・契約組織にのみ付与されます。</p>
+      </div>
+    `
+  },
+  privacy: {
+    title: 'Privacy Policy',
+    body: `
+      <div class="space-y-4 text-[11px] leading-relaxed text-white/50 select-none">
+        <p>POSTING MAP は、<br>FIELD OPERATIONS SYSTEM として、<br>以下の情報を取得・管理します。</p>
+
+        <div class="space-y-1">
+          <p class="text-white/70 font-black">【取得・管理する情報】</p>
+          <div class="pl-3 text-white/40 space-y-0.5">
+            <div>・LINE認証情報</div>
+            <div>・配布員ID</div>
+            <div>・エリア進捗</div>
+            <div>・配布ログ</div>
+            <div>・GPS位置情報</div>
+            <div>・写真エビデンス</div>
+            <div>・デバイス情報</div>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <p class="text-white/70 font-black">【取得データの利用目的】</p>
+          <div class="pl-3 text-white/40 space-y-0.5">
+            <div>・配布進捗管理</div>
+            <div>・エリア統制</div>
+            <div>・FIELD OPERATIONS分析</div>
+            <div>・不正防止</div>
+            <div>・リアルタイム同期</div>
+          </div>
+        </div>
+
+        <p class="text-white/40 pt-2 border-t border-white/5">GPSおよび写真情報は、<br>FIELD OPERATIONS の活動証跡として利用されます。</p>
+      </div>
+    `
+  },
+  license: {
+    title: 'License',
+    body: `
+      <div class="space-y-4 text-[11px] leading-relaxed text-white/50 select-none">
+        <p class="text-white font-bold">FIELD OPERATIONS LICENSE</p>
+
+        <p class="text-white/60 font-black">LICENSED ORGANIZATION<br>【__BRANCH_NAME__】</p>
+
+        <div class="space-y-1">
+          <p class="text-white/70 font-black">AUTHORIZED SYSTEMS：</p>
+          <div class="pl-3 text-white/40 space-y-0.5">
+            <div>・STAFF APP</div>
+            <div>・ADMIN CONTROL</div>
+            <div>・HQ MONITORING</div>
+            <div>・REALTIME FIELD SYNC</div>
+          </div>
+        </div>
+
+        <p class="text-white/60 font-black">LICENSE STATUS:<br><span class="text-emerald-500/80 font-black">ACTIVE</span></p>
+
+        <p class="text-white/40">本ライセンスは、契約地域内のみ有効です。<br>地域外利用・再配布は禁止します。</p>
+
+        <div class="space-y-1">
+          <p class="text-white/70 font-black">POSTING MAP は：</p>
+          <div class="pl-3 text-white/40 space-y-0.5">
+            <div>・LINE認証</div>
+            <div>・STAFF ID</div>
+            <div>・ライセンス管理</div>
+            <div>・権限制御</div>
+          </div>
+          <p class="text-white/40">により、FIELD OPERATIONS を保護します。</p>
+        </div>
+
+        <p class="text-white/40 pt-2 border-t border-white/5">LICENSED FIELD OPERATIONS SYSTEM<br>© POSTING MAP</p>
+      </div>
+    `
+  }
+};
+
+// ID情報モーダルの制御
+function openIdInfoModal(type, event) {
+  if (event) event.stopPropagation(); // イベントのバブリング防止
+
+  const modal = $('id-info-modal');
+  if (!modal) return;
+
+  const data = ID_INFO_DATA[type];
+  if (!data) return;
+
+  const titleEl = $('id-info-title');
+  const bodyEl = $('id-info-body');
+
+  if (titleEl) titleEl.textContent = data.title;
+  if (bodyEl) {
+    let bodyText = data.body;
+
+    // ライセンス表示時のみ、地区名を動的に差し替える（Google Sheetsファイル名SSOTから動的解決）
+    if (type === 'license') {
+      const displayBranch = window.__districtName || localStorage.getItem('branch_name') || '';
+      bodyText = bodyText.replace('__BRANCH_NAME__', escapeHtml(displayBranch));
+    }
+
+    bodyEl.innerHTML = bodyText;
+  }
+
+  modal.classList.remove('pointer-events-none', 'opacity-0');
+  modal.firstElementChild.classList.remove('translate-y-full');
+}
+
+function closeIdInfoModal() {
+  const modal = $('id-info-modal');
+  if (!modal) return;
+  modal.classList.add('opacity-0', 'pointer-events-none');
+  modal.firstElementChild.classList.add('translate-y-full');
+}
+
+// =============================
+// 受渡要請システム (Flyer Transfer Request System)
+// =============================
+let currentTransferRequest = null;
+
+window.openTransferRequestDialog = function(name, id, loc, count, storageId) {
+  const displayStorageId = String(storageId || '').trim();
+  currentTransferRequest = { holderName: name, holderUserId: id, requestArea: loc, stockCount: count, storageId: displayStorageId };
+
+  // 既存を削除して再生成（CSS競合を完全排除）
+  const prev = document.getElementById('dynamic-transfer-dialog');
+  if (prev) prev.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'dynamic-transfer-dialog';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,0.85);';
+
+  overlay.innerHTML = `
+    <div style="background:#1C1C1E;border-radius:24px;border:1px solid rgba(255,255,255,0.12);padding:28px 20px;width:100%;max-width:340px;box-sizing:border-box;">
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-size:24px;margin-bottom:8px;">📦</div>
+        <div style="color:white;font-size:16px;font-weight:900;letter-spacing:0.05em;">受渡要請</div>
+      </div>
+      <div style="color:rgba(255,255,255,0.7);font-size:13px;font-weight:700;margin-bottom:20px;line-height:1.5;text-align:left;">
+        ${escapeHtml(displayStorageId)}さんとの<br>連絡方法を入力してください。
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="display:block;color:rgba(255,255,255,0.45);font-size:11px;font-weight:900;letter-spacing:0.05em;margin-bottom:8px;">【連絡方法】</label>
+        <div style="display:flex;gap:16px;align-items:center;padding:4px 0;">
+          <label style="display:flex;align-items:center;gap:6px;color:white;font-size:13px;font-weight:700;cursor:pointer;">
+            <input type="radio" name="contact-method" value="LINE" checked style="accent-color:#2563eb;cursor:pointer;"> LINE
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;color:white;font-size:13px;font-weight:700;cursor:pointer;">
+            <input type="radio" name="contact-method" value="電話" style="accent-color:#2563eb;cursor:pointer;"> 電話
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;color:white;font-size:13px;font-weight:700;cursor:pointer;">
+            <input type="radio" name="contact-method" value="メール" style="accent-color:#2563eb;cursor:pointer;"> メール
+          </label>
+        </div>
+      </div>
+
+      <div style="margin-bottom:24px;">
+        <label style="display:block;color:rgba(255,255,255,0.45);font-size:11px;font-weight:900;letter-spacing:0.05em;margin-bottom:8px;">【連絡先】</label>
+        <input type="text" id="transfer-contact-value" placeholder="LINE ID"
+          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:12px 14px;color:white;font-size:14px;font-weight:700;outline:none;" />
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button id="dyn-cancel"
+          style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);border-radius:14px;padding:14px 8px;font-size:13px;font-weight:900;cursor:pointer;transition:transform 0.12s ease, opacity 0.12s ease;"
+          onpointerdown="this.style.transform='scale(0.94)'; this.style.opacity='0.7';"
+          onpointerup="this.style.transform='scale(1)'; this.style.opacity='1';"
+          onpointerleave="this.style.transform='scale(1)'; this.style.opacity='1';">キャンセル</button>
+        <button id="dyn-submit" class="btn-neu"
+          style="flex:2;background:#2563eb;border:none;color:white;border-radius:14px;padding:14px 8px;font-size:13px;font-weight:900;cursor:pointer;transition:transform 0.12s ease, opacity 0.12s ease;"
+          onpointerdown="this.style.transform='scale(0.96)'; this.style.opacity='0.85';"
+          onpointerup="this.style.transform='scale(1)'; this.style.opacity='1';"
+          onpointerleave="this.style.transform='scale(1)'; this.style.opacity='1';">受渡要請を送る</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const contactValueInput = document.getElementById('transfer-contact-value');
+  const methodPlaceholders = {
+    'LINE': 'LINE ID',
+    '電話': '電話番号',
+    'メール': 'メールアドレス'
+  };
+
+  document.querySelectorAll('input[name="contact-method"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      if (contactValueInput) {
+        contactValueInput.placeholder = methodPlaceholders[e.target.value] || '連絡先を入力';
+      }
+    });
+  });
+
+  document.getElementById('dyn-cancel').addEventListener('click', () => overlay.remove());
+
+  document.getElementById('dyn-submit').addEventListener('click', async () => {
+    const contactValueInput = document.getElementById('transfer-contact-value');
+    const contactValue = contactValueInput ? contactValueInput.value.trim() : '';
+
+    if (!contactValue) {
+      alert('連絡先を入力してください。');
+      if (contactValueInput) contactValueInput.focus();
+      return;
+    }
+
+    const methodRadio = document.querySelector('input[name="contact-method"]:checked');
+    const contactMethod = methodRadio ? methodRadio.value : 'LINE';
+
+    const btn = document.getElementById('dyn-submit');
+    if (btn) { btn.textContent = '送信中...'; btn.disabled = true; }
+
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const requestUserId = userInfo.id ? String(userInfo.id).trim() : 'UNKNOWN';
+
+    try {
+      const res = await callApiPost('requestFlyerTransfer', {
+        requestUserId: requestUserId,
+        holderUserId: currentTransferRequest.holderUserId,
+        contactMethod: contactMethod,
+        contactValue: contactValue
+      });
+
+      overlay.remove();
+      if (res && res.success) {
+        alert('✅ 受渡要請を送信しました！\n保管者に通知されます。');
+      } else {
+        alert('送信に失敗しました: ' + (res ? res.message : 'Unknown error'));
+      }
+    } catch(err) {
+      alert('通信エラー: ' + err.message);
+      if (btn) { btn.textContent = '受渡要請を送る'; btn.disabled = false; }
+    }
+  });
+};
+
+window.closeTransferRequestDialog = function() {
+  const d = document.getElementById('dynamic-transfer-dialog');
+  if (d) d.remove();
+};
+
+window.updateBulletinCharCount = function(textarea) {
+  const counter = document.getElementById('bulletin-char-counter');
+  if (!counter || !textarea) return;
+  const len = textarea.value.length;
+  counter.textContent = len + ' / 150';
+  if (len >= 150) {
+    counter.classList.add('text-red-400');
+    counter.classList.remove('text-white/40');
+  } else {
+    counter.classList.remove('text-red-400');
+    counter.classList.add('text-white/40');
+  }
+};
+
+window.fetchBulletinPosts = function() {
+  const container = document.getElementById('bulletin-list-container');
+  if (container) {
+    container.innerHTML = `
+      <div style="border: 1px solid rgba(255,255,255,0.04);" class="premium-glass p-8 flex flex-col items-center justify-center text-center gap-3">
+        <div class="w-8 h-8 rounded-full border-2 border-[#2563eb]/40 border-t-[#2563eb] animate-spin"></div>
+        <p class="text-[10px] font-black text-white/40 uppercase tracking-[0.3em]">Loading Bulletin...</p>
+      </div>`;
+  }
+
+  callApiPost('getBulletinPosts').then(data => {
+    if (data && data.success && Array.isArray(data.posts)) {
+      if (typeof renderBulletinList === 'function') renderBulletinList(data.posts);
+    } else {
+      if (container) {
+        container.innerHTML = `
+          <div style="border: 1px solid rgba(255,255,255,0.04);" class="premium-glass p-8 flex flex-col items-center justify-center text-center gap-3">
+            <span class="text-2xl">⚠️</span>
+            <p class="text-sm font-black text-white/60">データ取得に失敗しました</p>
+          </div>`;
+      }
+    }
+  }).catch(() => {
+    if (container) {
+      container.innerHTML = `
+        <div style="border: 1px solid rgba(255,255,255,0.04);" class="premium-glass p-8 flex flex-col items-center justify-center text-center gap-3">
+          <span class="text-2xl">⚠️</span>
+          <p class="text-sm font-black text-white/60">エラーが発生しました</p>
+        </div>`;
+    }
+  });
+};
+
+window.submitBulletinPost = async function() {
+  const inputEl = document.getElementById('bulletin-message-input');
+  const btn = document.getElementById('btn-bulletin-submit');
+  const counter = document.getElementById('bulletin-char-counter');
+  if (!inputEl || !btn) return;
+
+  const msg = inputEl.value.trim();
+  if (!msg) {
+    alert('メッセージを入力してください。');
+    inputEl.focus();
+    return;
+  }
+  if (msg.length > 150) {
+    alert('メッセージは150文字以内で入力してください。');
+    return;
+  }
+
+  const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+  const staffId = userInfo.id ? String(userInfo.id).trim() : (window.currentUser && window.currentUser.id ? String(window.currentUser.id).trim() : '');
+  const staffName = `${userInfo.last || ''} ${userInfo.first || ''}`.trim() || staffId;
+
+  if (!staffId) {
+    alert('配布員IDが取得できませんでした。');
+    return;
+  }
+
+  const originalText = btn.textContent;
+  btn.textContent = '投稿中...';
+  btn.disabled = true;
+
+  try {
+    const res = await callApiPost('createBulletinPost', {
+      staffId: staffId,
+      staffName: staffName,
+      message: msg
+    });
+
+    if (res && res.success) {
+      inputEl.value = '';
+      if (counter) counter.textContent = '0 / 150';
+      alert('✓ 投稿が完了しました');
+      window.fetchBulletinPosts();
+    } else {
+      alert('投稿に失敗しました: ' + (res ? res.message : 'Unknown error'));
+    }
+  } catch (err) {
+    alert('通信エラー: ' + err.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+};
+
+window.openBulletinContactDialog = function(targetStaffId) {
+  const prev = document.getElementById('dynamic-bulletin-contact-dialog');
+  if (prev) prev.remove();
+
+  const targetIdStr = String(targetStaffId || '').trim();
+  const overlay = document.createElement('div');
+  overlay.id = 'dynamic-bulletin-contact-dialog';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,0.85);';
+
+  overlay.innerHTML = `
+    <div style="background:#1C1C1E;border-radius:24px;border:1px solid rgba(255,255,255,0.12);padding:28px 20px;width:100%;max-width:340px;box-sizing:border-box;">
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-size:24px;margin-bottom:8px;">💬</div>
+        <div style="color:white;font-size:16px;font-weight:900;letter-spacing:0.05em;">連絡</div>
+      </div>
+      <div style="color:rgba(255,255,255,0.7);font-size:13px;font-weight:700;margin-bottom:20px;line-height:1.5;text-align:left;">
+        ${escapeHtml(targetIdStr)}さんとの<br>連絡方法を入力してください。
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="display:block;color:rgba(255,255,255,0.45);font-size:11px;font-weight:900;letter-spacing:0.05em;margin-bottom:8px;">【連絡方法】</label>
+        <div style="display:flex;gap:16px;align-items:center;padding:4px 0;">
+          <label style="display:flex;align-items:center;gap:6px;color:white;font-size:13px;font-weight:700;cursor:pointer;">
+            <input type="radio" name="bulletin-contact-method" value="LINE" checked style="accent-color:#2563eb;cursor:pointer;"> LINE
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;color:white;font-size:13px;font-weight:700;cursor:pointer;">
+            <input type="radio" name="bulletin-contact-method" value="電話" style="accent-color:#2563eb;cursor:pointer;"> 電話
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;color:white;font-size:13px;font-weight:700;cursor:pointer;">
+            <input type="radio" name="bulletin-contact-method" value="メール" style="accent-color:#2563eb;cursor:pointer;"> メール
+          </label>
+        </div>
+      </div>
+
+      <div style="margin-bottom:24px;">
+        <label style="display:block;color:rgba(255,255,255,0.45);font-size:11px;font-weight:900;letter-spacing:0.05em;margin-bottom:8px;">【連絡先】</label>
+        <input type="text" id="bulletin-contact-value" placeholder="LINE ID"
+          style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:12px 14px;color:white;font-size:14px;font-weight:700;outline:none;" />
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button id="btn-bulletin-contact-cancel"
+          style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);border-radius:14px;padding:14px 8px;font-size:13px;font-weight:900;cursor:pointer;transition:transform 0.12s ease, opacity 0.12s ease;"
+          onpointerdown="this.style.transform='scale(0.94)'; this.style.opacity='0.7';"
+          onpointerup="this.style.transform='scale(1)'; this.style.opacity='1';"
+          onpointerleave="this.style.transform='scale(1)'; this.style.opacity='1';">キャンセル</button>
+        <button id="btn-bulletin-contact-submit" class="btn-neu"
+          style="flex:2;background:#2563eb;border:none;color:white;border-radius:14px;padding:14px 8px;font-size:13px;font-weight:900;cursor:pointer;transition:transform 0.12s ease, opacity 0.12s ease;"
+          onpointerdown="this.style.transform='scale(0.96)'; this.style.opacity='0.85';"
+          onpointerup="this.style.transform='scale(1)'; this.style.opacity='1';"
+          onpointerleave="this.style.transform='scale(1)'; this.style.opacity='1';">連絡する</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const contactValueInput = document.getElementById('bulletin-contact-value');
+  const methodPlaceholders = {
+    'LINE': 'LINE ID',
+    '電話': '電話番号',
+    'メール': 'メールアドレス'
+  };
+
+  document.querySelectorAll('input[name="bulletin-contact-method"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      if (contactValueInput) {
+        contactValueInput.placeholder = methodPlaceholders[e.target.value] || '連絡先を入力';
+      }
+    });
+  });
+
+  document.getElementById('btn-bulletin-contact-cancel').addEventListener('click', () => overlay.remove());
+
+  document.getElementById('btn-bulletin-contact-submit').addEventListener('click', async () => {
+    const contactValueInput = document.getElementById('bulletin-contact-value');
+    const contactValue = contactValueInput ? contactValueInput.value.trim() : '';
+
+    if (!contactValue) {
+      alert('連絡先を入力してください。');
+      if (contactValueInput) contactValueInput.focus();
+      return;
+    }
+
+    const methodRadio = document.querySelector('input[name="bulletin-contact-method"]:checked');
+    const contactMethod = methodRadio ? methodRadio.value : 'LINE';
+
+    const btn = document.getElementById('btn-bulletin-contact-submit');
+    if (btn) { btn.textContent = '連絡中...'; btn.disabled = true; }
+
+    const userInfo = JSON.parse(localStorage.getItem('user_info') || '{}');
+    const requestUserId = userInfo.id ? String(userInfo.id).trim() : (window.currentUser && window.currentUser.id ? String(window.currentUser.id).trim() : 'UNKNOWN');
+
+    try {
+      const res = await callApiPost('sendBulletinContact', {
+        requestUserId: requestUserId,
+        targetStaffId: targetIdStr,
+        contactMethod: contactMethod,
+        contactValue: contactValue
+      });
+
+      overlay.remove();
+      if (res && res.success) {
+        alert('✓ 連絡を送信しました');
+      } else {
+        alert('連絡の送信に失敗しました: ' + (res ? res.message : 'Unknown error'));
+      }
+    } catch(err) {
+      alert('通信エラー: ' + err.message);
+      if (btn) { btn.textContent = '連絡する'; btn.disabled = false; }
+    }
+  });
+};
+
+window.closeBulletinContactDialog = function() {
+  const d = document.getElementById('dynamic-bulletin-contact-dialog');
+  if (d) d.remove();
+};
+
+

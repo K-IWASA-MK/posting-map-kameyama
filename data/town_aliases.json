@@ -1,0 +1,33 @@
+[
+  {
+    "municipality_code": "33103",
+    "municipality_name": "岡山市東区",
+    "match_type": "exact",
+    "source_name": "富士見町一丁目",
+    "target_name": "富士見町",
+    "reason": "丁目表記正規化 (富士見町一丁目 <-> 富士見町)"
+  },
+  {
+    "municipality_code": "33104",
+    "municipality_name": "岡山市南区",
+    "match_type": "exact",
+    "source_name": "青江六丁目",
+    "target_name": "青江",
+    "reason": "丁目表記正規化 (青江六丁目 <-> 青江)"
+  },
+  {
+    "municipality_code": "33104",
+    "municipality_name": "岡山市南区",
+    "match_type": "exact",
+    "source_name": "曽根",
+    "target_name": "曾根",
+    "reason": "新旧異体字正規化 (曽根 <-> 曾根)"
+  },
+  {
+    "municipality_code": "33212",
+    "municipality_name": "瀬戸内市",
+    "match_type": "municipality_prefix_aggregation",
+    "prefix_source": "master_town",
+    "reason": "瀬戸内市全域：住所マスターの親大字名を接頭辞として配下のe-Stat小字を統合集約"
+  }
+]

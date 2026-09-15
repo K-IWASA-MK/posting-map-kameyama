@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0B1019">
+  <title>POSTING MAP</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+  <!-- Leaflet Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="../../data/config.js"></script>
+  <script>
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+      document.addEventListener('touchmove', function(e) {
+        if (e.touches && e.touches.length > 1) {
+          if (e.target.closest('#map')) {
+            return;
+          }
+          e.preventDefault();
+        }
+      }, { passive: false });
+    }
+  </script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: '#EA5F08',
+            brandLight: '#fb923c',
+            brandDark: '#c2410c',
+            brandBlue: '#00B7FF',
+            brandGreen: '#22C55E',
+            appBg: '#0B1019',
+            containerBg: '#131A26',
+            cardBg: '#182130',
+            cardSubBg: '#1F2B3E',
+            borderNormal: '#243044',
+            borderHighlight: '#33435C',
+            textMain: '#E6ECF3',
+            textSub: '#94A3B8',
+            statusGreen: '#22C55E',
+            statusYellow: '#F59E0B',
+            statusRed: '#EF4444'
+          },
+          fontFamily: {
+            sans: ['Outfit', 'Noto Sans JP', 'sans-serif'],
+            mono: ['Outfit', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      user-select: none;
+    }
+    html, body {
+      height: 100vh;
+      height: 100dvh;
+      width: 100vw;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #0B1019;
+      color: #E6ECF3;
+      font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+    }
+
+    
+    @media (max-width: 1023px) and (hover: none) and (pointer: coarse) {
+      html, body {
+        overflow-x: hidden;
+        touch-action: pan-y;
+      }
+      
+      #map {
+        touch-action: none !important;
+      }
+    }
+
+    
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #243044;
+      border-radius: 2px;
+    }
+
+    
+    .pm-card {
+      background: #131A26;
+      border: 1px solid #243044;
+      border-radius: 12px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .pm-card:hover {
+      border-color: #33435C;
+    }
+
+    
+    .leaflet-container {
+      background-color: #cbd5e1 !important;
+      font-family: inherit;
+    }
+    .leaflet-popup-content-wrapper {
+      background: rgba(19, 26, 38, 0.95) !important;
+      color: #E6ECF3 !important;
+      border: 1px solid #243044 !important;
+      border-radius: 10px !important;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+    }
+    .leaflet-popup-tip {
+      background: rgba(19, 26, 38, 0.95) !important;
+    }
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    
+    .nav-item {
+      transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .nav-item-active {
+      background-color: rgba(234, 95, 8, 0.12) !important;
+      color: #EA5F08 !important;
+      border-color: rgba(234, 95, 8, 0.35) !important;
+    }
+
+    
+    @keyframes liveSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    .live-card-new {
+      animation: liveSlideIn 320ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+  </style>
+</head>
+<body class="bg-appBg text-textMain h-[100dvh] w-screen overflow-hidden flex flex-col lg:flex-row antialiased">
+
+  <!-- ==================== DEVICE ACCESS LOCK SCREEN ==================== -->
+  <div id="device-lock-screen" class="hidden fixed inset-0 z-50 bg-[#0B1019] flex-col items-center justify-center p-6 text-center select-none">
+    <div class="w-16 h-16 rounded-2xl bg-statusRed/10 border border-statusRed/30 flex items-center justify-center text-3xl mb-4 shadow-lg shadow-statusRed/10 animate-pulse">
+      🛡️
+    </div>
+    <h2 class="text-xl font-bold text-white mb-2">アクセスが制限されています</h2>
+    <p class="text-sm text-textSub max-w-md mb-6 leading-relaxed">
+      アクセス権限がありません。<br>
+      管理者へお問い合わせください。
+    </p>
+    <div class="px-4 py-2 rounded-xl bg-cardBg border border-borderNormal text-xs font-mono text-textSub/70">
+      STATUS: 403 FORBIDDEN
+    </div>
+  </div>
+
+  <!-- ==================== MANAGER 6-DIGIT PIN GATE SCREEN ==================== -->
+  <div id="manager-pin-gate" class="fixed inset-0 z-50 bg-[#0B1019] flex items-center justify-center p-4 select-none">
+    <div class="w-full max-w-sm p-6 sm:p-8 rounded-2xl bg-[#131A26] border border-[#243044] shadow-2xl flex flex-col items-center text-center">
+      <!-- 公式ロゴ -->
+      <div class="w-20 h-20 rounded-full bg-[#0B1019] border border-[#243044] flex items-center justify-center p-2 mb-4 shadow-inner">
+        <div class="w-16 h-16 rounded-full overflow-hidden border border-white/10 bg-white flex items-center justify-center p-1 shadow">
+          <img src="/active/dashboard/assets/icon180-v2.png" alt="POSTING MAP" class="w-full h-full object-cover">
+        </div>
+      </div>
+
+      <!-- タイトル -->
+      <h2 class="text-lg font-bold text-white tracking-wide mb-1">管理画面ログイン</h2>
+      <p class="text-xs text-textSub mb-5">Manager用パスワードを入力してください</p>
+
+      <!-- 6桁PIN入力フォーム -->
+      <form id="manager-pin-form" onsubmit="handleManagerPinSubmit(event)" class="w-full space-y-4">
+        <div class="relative">
+          <input
+            type="password"
+            id="manager-pin-input"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            autocomplete="off"
+            placeholder="••••••"
+            class="w-full h-14 bg-[#0B1019] border-2 border-[#243044] focus:border-brand rounded-xl text-center text-2xl font-mono tracking-[0.4em] text-white placeholder-textSub/30 outline-none transition-all shadow-inner"
+            required
+            autofocus
+          />
+        </div>
+        <div id="manager-pin-error" class="text-xs text-statusRed font-medium min-h-[1.25rem] transition-opacity"></div>
+        <button
+          type="submit"
+          id="manager-pin-btn"
+          class="w-full h-11 bg-brand hover:bg-brandLight text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-brand/20 active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+        >
+          <span id="manager-pin-btn-text">ログイン</span>
+          <span id="manager-pin-btn-spinner" class="hidden animate-spin text-sm">⏳</span>
+        </button>
+      </form>
+
+      <!-- フッターセキュリティバッジ -->
+      <div class="mt-6 pt-4 border-t border-[#243044]/60 w-full flex items-center justify-center gap-1.5 text-[11px] text-textSub/60">
+        <span>🔒 関係者専用</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MOBILE TOP HEADER (lg:hidden) ==================== -->
+  <header class="lg:hidden h-[calc(3rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] bg-containerBg border-b border-borderNormal px-3 flex items-center justify-between flex-shrink-0 z-30">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-lg overflow-hidden border border-white/10 bg-white flex items-center justify-center p-0.5 shadow-sm flex-shrink-0">
+        <img src="/active/dashboard/assets/icon180-v2.png" alt="POSTING MAP" class="w-full h-full object-cover">
+      </div>
+      <span class="font-bold text-xs text-white font-mono tracking-tight">POSTING MAP</span>
+    </div>
+
+    <!-- モバイル用自治体セレクター -->
+    <div class="relative flex-1 max-w-[140px] mx-2">
+      <button id="mobile-city-selector-trigger" type="button" onclick="toggleCityDropdown(event, true)" aria-expanded="false" class="w-full h-8 bg-[#0B1019] text-white border border-borderNormal rounded-lg px-2 text-xs font-semibold flex items-center justify-between truncate cursor-pointer">
+        <span id="mobile-city-selector-current" class="truncate font-semibold text-white">全域</span>
+        <span class="text-[10px] text-textSub ml-1">▼</span>
+      </button>
+      <div id="mobile-city-selector-list" class="hidden absolute top-9 left-0 w-44 p-1 rounded-xl bg-[#0B1019] border border-borderNormal max-h-48 overflow-y-auto space-y-0.5 z-50 shadow-2xl"></div>
+    </div>
+
+    <!-- LIVEステータス -->
+    <div class="flex items-center gap-1.5 text-[10px] font-mono text-textSub flex-shrink-0">
+      <span id="mobile-live-dot" class="w-2 h-2 rounded-full bg-statusGreen"></span>
+      <span id="mobile-sync-clock">--:--</span>
+    </div>
+  </header>
+
+  <!-- ==================== LEFT SIDEBAR (NAV & SYSTEM LINE: PC 1024px+ ONLY) ==================== -->
+  <aside class="hidden lg:flex lg:w-56 bg-containerBg border-r border-borderNormal p-3 flex-col justify-between flex-shrink-0 z-20 overflow-hidden">
+
+    <!-- Top: Branding (公式ロゴ: 一回り大きい正円暗いグレーカード内に配置) -->
+    <div class="flex flex-col min-h-0 overflow-hidden">
+      <div class="flex items-center justify-center pt-1 pb-1 flex-shrink-0">
+        <div class="w-[136px] h-[136px] rounded-full bg-[#0B1019] border border-borderNormal flex items-center justify-center shadow-inner">
+          <div class="w-[114px] h-[114px] rounded-full overflow-hidden border border-white/10 bg-white flex items-center justify-center p-1 shadow-md">
+            <img src="/active/dashboard/assets/icon180-v2.png" alt="POSTING MAP" class="w-full h-full object-cover">
+          </div>
+        </div>
+      </div>
+
+      <!-- 自治体セレクター (左ナビ内完結・インラインアコーディオン) -->
+      <div id="city-selector-container" class="mt-3 flex-shrink-0">
+        <button id="city-selector-trigger" type="button" onclick="toggleCityDropdown()" aria-expanded="false" class="w-full h-10 bg-[#0B1019] text-white border border-borderNormal hover:border-brand/50 rounded-xl px-3 text-sm font-semibold flex items-center justify-between transition-colors shadow-inner cursor-pointer">
+          <span id="city-selector-current" class="truncate font-semibold text-white">全域</span>
+          <span id="city-selector-arrow" class="text-xs text-textSub transition-transform duration-200">▼</span>
+        </button>
+        <div id="city-selector-list" class="hidden mt-1.5 p-1 rounded-xl bg-[#0B1019] border border-borderNormal max-h-48 overflow-y-auto space-y-0.5">
+          <!-- populateCitySelector で動的生成 -->
+        </div>
+      </div>
+
+      <!-- Navigation Menu (コンテンツ自動フィット ＋ 拡張時内部スクロール) -->
+      <nav class="space-y-1 mt-3 p-1.5 rounded-2xl bg-[#0B1019]/80 border border-borderNormal overflow-y-auto max-h-[calc(100vh-280px)]">
+        <button id="nav-areas" onclick="switchView('areas')" class="nav-item nav-item-active w-full h-10 flex items-center gap-2.5 px-3 rounded-xl border border-brand/35 text-brand font-semibold text-left">
+          <span class="w-5 text-base flex items-center justify-center flex-shrink-0">🗺️</span>
+          <span class="text-sm">配布エリア</span>
+        </button>
+        <button id="nav-records" onclick="switchView('records')" class="nav-item w-full h-10 flex items-center gap-2.5 px-3 rounded-xl text-textSub border border-transparent hover:text-white hover:bg-white/5 text-left font-medium">
+          <span class="w-5 text-base flex items-center justify-center flex-shrink-0">📝</span>
+          <span class="text-sm">配布実績</span>
+        </button>
+        <button id="nav-stocks" onclick="switchView('stocks')" class="nav-item w-full h-10 flex items-center gap-2.5 px-3 rounded-xl text-textSub border border-transparent hover:text-white hover:bg-white/5 text-left font-medium">
+          <span class="w-5 text-base flex items-center justify-center flex-shrink-0">📦</span>
+          <span class="text-sm">保有チラシ</span>
+        </button>
+        <button id="nav-roster" onclick="switchView('roster')" class="nav-item w-full h-10 flex items-center gap-2.5 px-3 rounded-xl text-textSub border border-transparent hover:text-white hover:bg-white/5 text-left font-medium">
+          <span class="w-5 text-base flex items-center justify-center flex-shrink-0">📋</span>
+          <span class="text-sm">名簿</span>
+        </button>
+        <button id="nav-requests" onclick="switchView('requests')" class="nav-item w-full h-10 flex items-center gap-2.5 px-3 rounded-xl text-textSub border border-transparent hover:text-white hover:bg-white/5 text-left font-medium">
+          <span class="w-5 text-base flex items-center justify-center flex-shrink-0">🤝</span>
+          <span class="text-sm">受渡要請</span>
+        </button>
+        <button id="nav-mail" onclick="switchView('mail')" class="nav-item w-full h-10 flex items-center gap-2.5 px-3 rounded-xl text-textSub border border-transparent hover:text-white hover:bg-white/5 text-left font-medium">
+          <span class="w-5 text-base flex items-center justify-center flex-shrink-0">✉️</span>
+          <span class="text-sm">活動メール</span>
+        </button>
+        <button id="nav-mobile" onclick="switchView('mobile')" class="nav-item w-full h-10 flex items-center gap-2.5 px-3 rounded-xl text-textSub border border-transparent hover:text-white hover:bg-white/5 text-left font-medium">
+          <span class="w-5 text-base flex items-center justify-center flex-shrink-0">📱</span>
+          <span class="text-sm">スマホ連携</span>
+        </button>
+        <button id="nav-bulletin" onclick="switchView('bulletin')" class="nav-item w-full h-10 flex items-center gap-2.5 px-3 rounded-xl text-textSub border border-transparent hover:text-white hover:bg-white/5 text-left font-medium">
+          <span class="w-5 text-base flex items-center justify-center flex-shrink-0">💬</span>
+          <span class="text-sm">掲示板</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Bottom: 常時監視ステータスライン (最下部固定) -->
+    <div class="pt-2 border-t border-borderNormal flex-shrink-0">
+      <!-- Live Sync Status Line -->
+      <div class="px-2.5 py-1.5 rounded-lg bg-[#0B1019]/60 border border-borderNormal/50 text-[11px]">
+        <div class="flex items-center gap-1.5">
+          <span id="live-dot" class="w-2 h-2 rounded-full bg-statusGreen"></span>
+          <span id="live-status-text" class="font-medium text-white/90">現場データ同期</span>
+        </div>
+        <div class="flex items-center justify-between text-textSub/70 mt-1 text-[10px] font-mono">
+          <span>最終同期</span>
+          <span id="sync-clock">--:--:--</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== MAIN CONTROL CANVAS (管制メインキャンバス) ==================== -->
+  <main class="flex-1 flex flex-col p-2 lg:p-2.5 gap-2 overflow-hidden bg-appBg min-w-0 min-h-0 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] lg:pb-2.5">
+
+    <!-- ========== ① 統括状況 BAR (PC用: hidden lg:flex 固定幅計器ライン) ========== -->
+    <div id="situation-bar" class="hidden lg:flex h-11 flex-shrink-0 items-center justify-between gap-2 px-2.5 bg-containerBg border border-borderNormal rounded-xl overflow-hidden">
+
+      <!-- 1. 🗺️ 配布状況 カード (w-[195px]) -->
+      <div class="w-[195px] flex-shrink-0 h-9 flex items-center justify-between px-3 rounded-lg bg-[#0B1019] border border-borderNormal">
+        <span class="text-[11px] font-medium text-textSub tracking-wider uppercase truncate">配布状況</span>
+        <div class="flex items-baseline gap-1">
+          <span id="fact-done-areas" class="text-lg font-bold font-mono text-white leading-none tracking-tight">--</span>
+          <span class="text-xs text-textSub font-mono font-normal">/ <span id="fact-total-areas">--</span></span>
+        </div>
+        <span id="fact-progress-badge" class="px-1.5 py-0.5 rounded text-xs font-mono font-bold bg-brand/15 text-brand border border-brand/30 leading-none">
+          --%
+        </span>
+      </div>
+
+      <!-- 2. エリア内訳 カード (w-[310px]: 全項目4桁完全耐性・数字text-lg・1行固定) -->
+      <div class="w-[310px] flex-shrink-0 h-9 flex items-center justify-between px-3 rounded-lg bg-[#0B1019] border border-borderNormal text-xs font-mono whitespace-nowrap overflow-hidden">
+        <div class="flex items-center gap-1.5 whitespace-nowrap">
+          <span class="w-2 h-2 rounded-full bg-statusGreen flex-shrink-0"></span>
+          <span class="text-textSub font-normal text-[11px]">未配布</span>
+          <span id="fact-unallocated-areas" class="text-lg font-bold font-mono text-white leading-none">--</span>
+        </div>
+        <div class="flex items-center gap-1.5 whitespace-nowrap">
+          <span class="w-2 h-2 rounded-full bg-brandBlue flex-shrink-0"></span>
+          <span class="text-textSub font-normal text-[11px]">配布中</span>
+          <span id="fact-inprogress-areas" class="text-lg font-bold font-mono text-white leading-none">--</span>
+        </div>
+        <div class="flex items-center gap-1.5 whitespace-nowrap">
+          <span class="w-2 h-2 rounded-full bg-brand flex-shrink-0"></span>
+          <span class="text-textSub font-normal text-[11px]">完了</span>
+          <span id="fact-completed-areas" class="text-lg font-bold font-mono text-white leading-none">--</span>
+        </div>
+      </div>
+
+      <!-- 3. 📝 配布実績 カード (w-[200px]) -->
+      <div class="w-[200px] flex-shrink-0 h-9 flex items-center justify-between px-3 rounded-lg bg-[#0B1019] border border-borderNormal">
+        <div class="flex items-center gap-1 min-w-0 flex-shrink-0">
+          <span class="text-xs flex-shrink-0">📝</span>
+          <span class="text-[11px] font-medium text-textSub truncate">配布実績</span>
+        </div>
+        <div class="flex items-baseline gap-0.5 flex-shrink-0">
+          <span id="fact-total-records" class="font-mono font-bold text-white text-lg leading-none">--</span>
+          <span class="text-[11px] font-normal text-textSub">枚</span>
+        </div>
+      </div>
+
+      <!-- 4. 📦 保有チラシ カード (w-[200px]) -->
+      <div class="w-[200px] flex-shrink-0 h-9 flex items-center justify-between px-3 rounded-lg bg-[#0B1019] border border-borderNormal">
+        <div class="flex items-center gap-1 min-w-0 flex-shrink-0">
+          <span class="text-xs flex-shrink-0">📦</span>
+          <span class="text-[11px] font-medium text-textSub truncate">保有チラシ</span>
+        </div>
+        <div class="flex items-baseline gap-0.5 flex-shrink-0">
+          <span id="fact-total-stocks" class="font-mono font-bold text-white text-lg leading-none">--</span>
+          <span class="text-[11px] font-normal text-textSub">枚</span>
+        </div>
+      </div>
+
+      <!-- 5. 📋 名簿 カード (w-[135px]) -->
+      <div class="w-[135px] flex-shrink-0 h-9 flex items-center justify-between px-3 rounded-lg bg-[#0B1019] border border-borderNormal">
+        <div class="flex items-center gap-1 min-w-0 flex-shrink-0">
+          <span class="text-xs flex-shrink-0">📋</span>
+          <span class="text-[11px] font-medium text-textSub truncate">名簿</span>
+        </div>
+        <div class="flex items-baseline gap-0.5 flex-shrink-0">
+          <span id="fact-total-roster" class="font-mono font-bold text-white text-lg leading-none">--</span>
+          <span class="text-[11px] font-normal text-textSub">名</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========== ①-B 統括状況 Grid (Mobile用: lg:hidden 2x2コンパクト配置) ========== -->
+    <div id="mobile-situation-bar" class="lg:hidden flex-shrink-0 p-1.5 bg-containerBg border border-borderNormal rounded-xl grid grid-cols-2 gap-1 text-xs font-mono">
+      <!-- 1. 配布状況 -->
+      <div class="bg-[#0B1019] border border-borderNormal p-1.5 rounded-lg flex flex-col justify-between">
+        <div class="flex items-center justify-between text-[10px] text-textSub font-sans">
+          <span>配布状況</span>
+          <span id="mobile-fact-progress-badge" class="px-1 py-0.2 rounded text-[10px] font-bold bg-brand/15 text-brand border border-brand/30">--%</span>
+        </div>
+        <div class="flex items-baseline gap-1 mt-0.5">
+          <span id="mobile-fact-done-areas" class="font-bold text-white text-base leading-none">--</span>
+          <span class="text-[10px] text-textSub font-normal">/ <span id="mobile-fact-total-areas">--</span></span>
+        </div>
+      </div>
+
+      <!-- 2. 内訳 (未/中/完) -->
+      <div class="bg-[#0B1019] border border-borderNormal p-1.5 rounded-lg flex flex-col justify-between">
+        <div class="text-[10px] text-textSub font-sans">内訳 (未/中/完)</div>
+        <div class="flex items-center justify-between text-[11px] mt-0.5 font-bold">
+          <span class="text-statusGreen" id="mobile-fact-unallocated-areas">--</span>
+          <span class="text-textSub/30 font-normal">/</span>
+          <span class="text-brandBlue" id="mobile-fact-inprogress-areas">--</span>
+          <span class="text-textSub/30 font-normal">/</span>
+          <span class="text-brand" id="mobile-fact-completed-areas">--</span>
+        </div>
+      </div>
+
+      <!-- 3. 配布実績 -->
+      <div class="bg-[#0B1019] border border-borderNormal p-1.5 rounded-lg flex flex-col justify-between">
+        <div class="text-[10px] text-textSub font-sans">配布実績</div>
+        <div class="flex items-baseline gap-0.5 mt-0.5">
+          <span id="mobile-fact-total-records" class="font-bold text-white text-base leading-none">--</span>
+          <span class="text-[10px] text-textSub font-normal">枚</span>
+        </div>
+      </div>
+
+      <!-- 4. 保有チラシ ＆ 名簿 -->
+      <div class="bg-[#0B1019] border border-borderNormal p-1.5 rounded-lg flex flex-col justify-between">
+        <div class="flex justify-between items-center text-[10px] text-textSub font-sans">
+          <span>保有</span>
+          <span>名簿</span>
+        </div>
+        <div class="flex items-baseline justify-between mt-0.5">
+          <span id="mobile-fact-total-stocks" class="font-bold text-white text-sm leading-none">--<span class="text-[9px] font-normal text-textSub">枚</span></span>
+          <span class="text-textSub/30 font-normal">|</span>
+          <span id="mobile-fact-total-roster" class="font-bold text-white text-sm leading-none">--<span class="text-[9px] font-normal text-textSub">名</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== ② & ③ MAIN COCKPIT BODY (中央MAIN STAGE ＆ 右側判断パネル) ========== -->
+    <div id="default-view-grid" class="flex-1 flex gap-2 min-h-0 overflow-hidden">
+
+      <!-- ===== ② CENTER: MAIN STAGE 【ここだけが切り替わる排他的ビュー】 ===== -->
+      <div id="main-stage-container" class="flex-1 flex flex-col pm-card p-2 relative overflow-hidden min-w-0">
+
+        <!-- 1. 配布エリア MAP ビュー (areas) -->
+        <div id="main-view-areas" class="flex-1 flex flex-col min-h-0">
+          <!-- マップ上部ヘッダー (文字幅フィットカード・中央配置) -->
+          <div class="flex items-center justify-center pb-1 flex-shrink-0 z-10">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-lg bg-[#0B1019] border border-borderNormal shadow-inner">
+              <span class="font-bold text-sm text-white tracking-wide">配布エリア MAP</span>
+              <span id="map-district-label" class="text-xs font-mono text-brand font-bold">全域</span>
+            </div>
+          </div>
+
+          <!-- Leaflet Map Canvas (最大面積確保) -->
+          <div class="flex-1 w-full rounded-lg overflow-hidden relative border border-borderNormal">
+            <div id="map" class="w-full h-full"></div>
+
+            <!-- マップ上ピンタップ時の詳細オーバーレイ -->
+            <div id="map-area-detail" class="absolute bottom-3 left-3 min-w-[200px] max-w-[280px] w-auto p-2.5 rounded-xl bg-containerBg/95 border border-borderHighlight backdrop-blur-md z-[1000] hidden transition-all shadow-2xl">
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div id="selected-area-name" class="font-bold text-xs text-white truncate">--</div>
+                  <div class="text-[11px] text-textSub mt-0.5">
+                    状態: <span id="selected-area-status" class="font-mono font-bold">--</span>
+                  </div>
+                  <div id="selected-area-meta" class="text-[10px] text-textSub/70 font-mono mt-0.5">--</div>
+                </div>
+                <button onclick="closeAreaDetail()" class="text-textSub hover:text-white px-2 py-1 text-xs flex-shrink-0">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. 配布実績 ビュー (records) -->
+        <div id="main-view-records" class="flex-1 flex flex-col min-h-0 hidden">
+          <div class="relative flex flex-col sm:flex-row items-center justify-center pb-1 flex-shrink-0 gap-1.5 sm:gap-0 min-h-[36px]">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-lg bg-[#0B1019] border border-borderNormal shadow-inner">
+              <span class="text-base">🏆</span>
+              <span class="font-bold text-sm text-white tracking-wide">配布実績 ランキング一覧</span>
+            </div>
+            <div class="flex items-center justify-center gap-1.5 flex-shrink-0 sm:absolute sm:right-0">
+              <button onclick="downloadRecordsReportPdf()" class="h-7 sm:h-8 px-2.5 sm:px-3 rounded-lg bg-[#0B1019] border border-borderNormal hover:border-brand/40 text-xs font-bold text-white flex items-center gap-1.5 transition-colors cursor-pointer" title="A4帳票をPDF出力 / 印刷">
+                <span>📄</span>
+                <span>帳票出力 (PDF)</span>
+              </button>
+              <button onclick="downloadRecordsCsv()" class="h-7 sm:h-8 px-2.5 sm:px-3 rounded-lg bg-[#0B1019] border border-borderNormal hover:border-brand/40 text-xs font-bold text-white flex items-center gap-1.5 transition-colors cursor-pointer" title="配布実績データをCSVダウンロード">
+                <span>📊</span>
+                <span>CSV出力</span>
+              </button>
+            </div>
+          </div>
+          <div id="main-stage-records-content" class="flex-1 overflow-y-auto pt-1 space-y-1.5 pr-1">
+            <!-- 動的レンダリング -->
+          </div>
+        </div>
+
+        <!-- 3. 保有チラシ ビュー (stocks) -->
+        <div id="main-view-stocks" class="flex-1 flex flex-col min-h-0 hidden">
+          <div class="flex items-center justify-center pb-1 flex-shrink-0">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-lg bg-[#0B1019] border border-borderNormal shadow-inner">
+              <span class="text-base">📦</span>
+              <span class="font-bold text-sm text-white tracking-wide">保有チラシ 拠点別一覧</span>
+            </div>
+          </div>
+          <div id="main-stage-stocks-content" class="flex-1 overflow-y-auto pt-1 space-y-1.5 pr-1">
+            <!-- 動的レンダリング -->
+          </div>
+        </div>
+
+        <!-- 4. 名簿 ビュー (roster) -->
+        <div id="main-view-roster" class="flex-1 flex flex-col min-h-0 hidden">
+          <div class="flex items-center justify-center pb-1 flex-shrink-0">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-lg bg-[#0B1019] border border-borderNormal shadow-inner">
+              <span class="text-base">📋</span>
+              <span class="font-bold text-sm text-white tracking-wide">登録配布員 名簿一覧</span>
+            </div>
+          </div>
+          <div id="main-stage-roster-content" class="flex-1 overflow-y-auto pt-1 space-y-1.5 pr-1">
+            <!-- 動的レンダリング -->
+          </div>
+        </div>
+
+        <!-- 5. 受渡要請 ビュー (requests) -->
+        <div id="main-view-requests" class="flex-1 flex flex-col min-h-0 hidden">
+          <div class="flex items-center justify-center pb-1 flex-shrink-0">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-lg bg-[#0B1019] border border-borderNormal shadow-inner">
+              <span class="text-base">🤝</span>
+              <span class="font-bold text-sm text-white tracking-wide">チラシ受渡要請 一覧</span>
+            </div>
+          </div>
+          <div id="main-stage-requests-content" class="flex-1 overflow-y-auto pt-1 space-y-1.5 pr-1">
+            <!-- 動的レンダリング -->
+          </div>
+        </div>
+
+        <!-- 6. 活動メール ビュー (mail) -->
+        <div id="main-view-mail" class="flex-1 flex flex-col min-h-0 hidden relative">
+          <div class="flex items-center justify-center pb-1 flex-shrink-0">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-lg bg-[#0B1019] border border-borderNormal shadow-inner">
+              <span class="text-base">✉️</span>
+              <span class="font-bold text-sm text-white tracking-wide">党員活動メール</span>
+            </div>
+          </div>
+          <!-- 成功通知トースト (中央上部にフロート) -->
+          <div id="mail-copy-toast" class="absolute top-10 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-lg bg-[#131A26] border border-borderNormal text-white/90 font-medium text-xs shadow-xl transition-all duration-200 opacity-0 pointer-events-none -translate-y-2 flex items-center gap-1.5">
+            ✓ コピーしました
+          </div>
+          <div id="main-stage-mail-content" class="flex-1 flex flex-col min-h-0 pt-1 overflow-y-auto overflow-x-hidden lg:overflow-hidden">
+            <!-- 動的レンダリング -->
+          </div>
+        </div>
+
+        <div id="main-view-mobile" class="flex-1 flex flex-col min-h-0 hidden relative">
+          <div class="flex items-center justify-center pb-1 flex-shrink-0">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-lg bg-[#0B1019] border border-borderNormal shadow-inner">
+              <span class="text-base">📱</span>
+              <span class="font-bold text-sm text-white tracking-wide">外出先スマホ連携</span>
+            </div>
+          </div>
+          <div id="main-stage-mobile-content" class="flex-1 flex flex-col min-h-0 pt-1 overflow-y-auto overflow-x-hidden"></div>
+        </div>
+
+        <div id="main-view-bulletin" class="flex-1 flex flex-col min-h-0 hidden">
+          <div class="flex items-center justify-center pb-1 flex-shrink-0">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-lg bg-[#0B1019] border border-borderNormal shadow-inner">
+              <span class="text-base">💬</span>
+              <span class="font-bold text-sm text-white tracking-wide">配布員 情報交換掲示板</span>
+            </div>
+          </div>
+          <div id="main-stage-bulletin-content" class="flex-1 overflow-y-auto pt-1 space-y-1.5 pr-1"></div>
+        </div>
+
+      </div>
+
+      <!-- ===== ③ RIGHT: 現場判断パネル (PC 1024px+ のみ常時固定表示) ===== -->
+      <div class="hidden lg:flex lg:w-72 sm:lg:w-80 flex-shrink-0 flex-col gap-2 min-h-0 overflow-hidden">
+
+        <!-- 上段スロット (空枠) -->
+        <div id="right-slot-top" class="flex-1 pm-card p-3 flex flex-col justify-between overflow-hidden">
+        </div>
+
+        <!-- 下段スロット (空枠) -->
+        <div id="right-slot-bottom" class="flex-1 pm-card p-3 flex flex-col justify-between overflow-hidden">
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ========== ④ LIVE (最新配布実績フィード: 常時最新4件固定) 【常時固定】 ========== -->
+    <div id="live-feed-bar" class="h-9 pm-card px-3 flex items-center justify-between flex-shrink-0 overflow-hidden">
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <span class="w-2.5 h-2.5 rounded-full bg-statusGreen animate-pulse"></span>
+        <span class="font-bold text-xs text-white tracking-wider uppercase whitespace-nowrap">LIVE</span>
+      </div>
+
+      <div class="h-4 w-px bg-borderNormal mx-2.5 flex-shrink-0"></div>
+
+      <!-- 常時4件固定スライディングウィンドウ -->
+      <div id="live-feed-container" class="flex-1 flex items-center gap-2.5 overflow-hidden px-1 min-w-0">
+        <div class="text-[11px] text-textSub/50">Backend配布実績データ読み込み中...</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ==================== MOBILE BOTTOM NAVIGATION (lg:hidden) ==================== -->
+  <nav class="lg:hidden fixed bottom-0 left-0 right-0 h-[calc(3.5rem+env(safe-area-inset-bottom,0px))] pb-[env(safe-area-inset-bottom,0px)] bg-[#0B1019]/95 backdrop-blur border-t border-borderNormal flex items-center justify-around px-1 z-40">
+    <button id="mobile-nav-areas" onclick="switchView('areas')" class="mobile-nav-item mobile-nav-active flex flex-col items-center justify-center flex-1 py-1 text-brand font-bold text-[10px] transition-colors cursor-pointer">
+      <span class="text-base leading-none">🗺️</span>
+      <span class="mt-0.5">エリア</span>
+    </button>
+    <button id="mobile-nav-records" onclick="switchView('records')" class="mobile-nav-item flex flex-col items-center justify-center flex-1 py-1 text-textSub font-medium text-[10px] hover:text-white transition-colors cursor-pointer">
+      <span class="text-base leading-none">📝</span>
+      <span class="mt-0.5">実績</span>
+    </button>
+    <button id="mobile-nav-stocks" onclick="switchView('stocks')" class="mobile-nav-item flex flex-col items-center justify-center flex-1 py-1 text-textSub font-medium text-[10px] hover:text-white transition-colors cursor-pointer">
+      <span class="text-base leading-none">📦</span>
+      <span class="mt-0.5">在庫</span>
+    </button>
+    <button id="mobile-nav-roster" onclick="switchView('roster')" class="mobile-nav-item flex flex-col items-center justify-center flex-1 py-1 text-textSub font-medium text-[10px] hover:text-white transition-colors cursor-pointer">
+      <span class="text-base leading-none">📋</span>
+      <span class="mt-0.5">名簿</span>
+    </button>
+    <button id="mobile-nav-requests" onclick="switchView('requests')" class="mobile-nav-item flex flex-col items-center justify-center flex-1 py-1 text-textSub font-medium text-[10px] hover:text-white transition-colors cursor-pointer">
+      <span class="text-base leading-none">🤝</span>
+      <span class="mt-0.5">受渡</span>
+    </button>
+    <button id="mobile-nav-mail" onclick="switchView('mail')" class="mobile-nav-item flex flex-col items-center justify-center flex-1 py-1 text-textSub font-medium text-[10px] hover:text-white transition-colors cursor-pointer">
+      <span class="text-base leading-none">✉️</span>
+      <span class="mt-0.5">メール</span>
+    </button>
+    <button id="mobile-nav-bulletin" onclick="switchView('bulletin')" class="mobile-nav-item flex flex-col items-center justify-center flex-1 py-1 text-textSub font-medium text-[10px] hover:text-white transition-colors cursor-pointer">
+      <span class="text-base leading-none">💬</span>
+      <span class="mt-0.5">掲示板</span>
+    </button>
+  </nav>
+
+  <script>
+    (function() {
+      var s = document.createElement('script');
+      s.src = 'manager.js?_t=' + Date.now();
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

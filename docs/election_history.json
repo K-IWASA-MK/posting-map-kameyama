@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "2.0.0",
+  "districtId": "OKAYAMA-02",
+  "districtName": "岡山県第2区",
+  "historyPolicy": {
+    "maxHistoryLength": 3,
+    "rotationPolicy": "KEEP_LATEST_3_ELECTIONS"
+  },
+  "sourcePolicy": {
+    "national": "総務省自治行政局選挙部",
+    "district": "岡山県選挙管理委員会",
+    "municipality": "各市選挙管理委員会"
+  },
+  "elections": [
+    {
+      "electionId": "HOUSE-2026-02",
+      "electionName": "第51回衆議院議員総選挙",
+      "year": "2026",
+      "electionDate": "2026-02-08",
+      "national": 56.26,
+      "districtTurnout": 53.27,
+      "district3": 53.27,
+      "municipalities": {
+        "岡山市中区": 53.47,
+        "岡山市東区": 53.52,
+        "岡山市南区": 50.74,
+        "玉野市": 57.01,
+        "瀬戸内市": 57.52
+      }
+    },
+    {
+      "electionId": "HOUSE-2024-10",
+      "electionName": "第50回衆議院議員総選挙",
+      "year": "2024",
+      "electionDate": "2024-10-27",
+      "national": 53.85,
+      "districtTurnout": 50.20,
+      "district3": 50.20,
+      "municipalities": {
+        "岡山市中区": 50.59,
+        "岡山市東区": 50.82,
+        "岡山市南区": 47.24,
+        "玉野市": 54.30,
+        "瀬戸内市": 54.02
+      }
+    },
+    {
+      "electionId": "HOUSE-2021-10",
+      "electionName": "第49回衆議院議員総選挙",
+      "year": "2021",
+      "electionDate": "2021-10-31",
+      "national": 55.93,
+      "districtTurnout": 48.94,
+      "district3": 48.94,
+      "municipalities": {
+        "岡山市中区": 48.73,
+        "岡山市東区": 49.55,
+        "岡山市南区": 45.67,
+        "玉野市": 53.78,
+        "瀬戸内市": 55.07
+      }
+    }
+  ],
+  "lastUpdated": "2026-09-10T10:00:00+09:00"
+}

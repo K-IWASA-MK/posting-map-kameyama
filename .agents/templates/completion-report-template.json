@@ -1,0 +1,17 @@
+{
+  "task": "",
+  "phase": "",
+  "claims": {
+    "implemented": false,
+    "verified": false,
+    "deployed": false,
+    "productionVerified": false
+  },
+  "evidence": {
+    "files": [],
+    "commands": [],
+    "commitHash": "",
+    "deploymentVersion": "",
+    "runtimeCheck": {}
+  }
+}
