@@ -206,7 +206,7 @@ async function main() {
       'http://localhost:8080/active/dashboard/components/staff.js',
       'http://localhost:8080/active/dashboard/components/ranking.js',
       'http://localhost:8080/active/business/area/address_master_service.js',
-      'http://localhost:8080/docs/election_history.json'
+      'http://localhost:8080/data/election_history.json'
     ];
 
     let allAssetsOk = true;

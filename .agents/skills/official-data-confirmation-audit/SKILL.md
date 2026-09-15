@@ -109,7 +109,7 @@ description: POSTING MAP公式データ確定監査プロトコル。公式一�
   5. `scripts/validate-district-data-gate.mjs` が ALL PASS であること。
 
 ### Gate 2: 選挙データ層確定審査 (Election Data Gate)
-- **対象**: `docs/election_history.json`
+- **対象**: `data/election_history.json`
 - **原本**: 総務省資料（国） ＋ 都道府県選管開票結果（県） ＋ 市区選管開票内訳（市）
 - **PASS条件**:
   1. 直近3回分の衆院選小選挙区について、全国・選挙区・自治体別の数値が3層突合されていること。
@@ -128,7 +128,7 @@ description: POSTING MAP公式データ確定監査プロトコル。公式一�
 
 ### Gate 4: ダッシュボードデータ層確定審査 (Dashboard Gate)
 - **対象**: `active/manager/manager.js`、ダッシュボード本番画面
-- **原本**: `data/boundaries.geojson` ＋ `docs/election_history.json` ＋ GAS WebApp API
+- **原本**: `data/boundaries.geojson` ＋ `data/election_history.json` ＋ GAS WebApp API
 - **PASS条件**:
   1. 地図ピン・境界ポリゴン選択時、`boundaries.geojson` の実人口・実世帯数がKPI反映されること。
   2. 選挙分析パネルに `election_history.json` の確定値が正しくバインドされていること。

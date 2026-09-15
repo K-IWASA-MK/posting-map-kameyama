@@ -14,6 +14,7 @@ const rootDir = process.cwd();
 const addressFile = path.join(rootDir, 'data', 'address_master.csv');
 const muniFile = path.join(rootDir, 'data', 'municipality_master.csv');
 const boundsFile = process.env.BOUNDARIES_FILE ? path.resolve(process.env.BOUNDARIES_FILE) : path.join(rootDir, 'data', 'boundaries.geojson');
+const electionFile = path.join(rootDir, 'data', 'election_history.json');
 
 console.log('===============================================================');
 console.log('🏛️  [DISTRICT DATA QUALITY GATE AUDIT - STAGE 1]');
@@ -65,7 +66,8 @@ const addressRows = addressRaw.slice(1).map(line => {
     city_name: parts[1],
     town_name: parts[2],
     lat: parseFloat(parts[3]),
-    lng: parseFloat(parts[4])
+    lng: parseFloat(parts[4]),
+    e_stat_code: parts[7] ? parts[7].trim() : ''
   };
 });
 const N = addressRows.length; // SSOT Count
@@ -259,34 +261,76 @@ const features = boundsRaw.features || [];
 }
 
 // ----------------------------------------------------------------------------
-// Rule 6: Previous District Zero Proven (前地区残存ゼロ証明)
+// Rule 6: Target District Whitelist Purity (SSOT 100% Match)
 // ----------------------------------------------------------------------------
 {
-  const expected = 'Zero traces of previous district (Mie, Yokkaichi, Komono, etc.) in boundaries.geojson';
-  const boundsFileText = fs.readFileSync(boundsFile, 'utf8');
-  const legacyKeywords = [
-    '三重', '四日市', '菰野', '鈴鹿', '桑名', 'いなべ', '朝日町', '川越町', 'MIE', 'MIE-03', 'mie'
-  ];
+  const expected = '100% of data/ records and features belong strictly to Target District SSOT (municipality_master.csv)';
+  
+  const allowedCityMap = new Map(muniRows.map(m => [m.city_name, m.city_code]));
+  const allowedCityNames = new Set(muniRows.map(m => m.city_name));
+  const allowedCityCodes = new Set(muniRows.map(m => m.city_code));
 
-  const foundLegacy = [];
-  legacyKeywords.forEach(kw => {
-    if (boundsFileText.includes(kw)) {
-      foundLegacy.push(kw);
-    }
-  });
-
-  // Also verify all city_names in boundaries belong strictly to municipality_master
-  const allowedCities = new Set(muniRows.map(m => m.city_name));
   const unauthorizedCities = new Set();
-  features.forEach(f => {
-    if (!allowedCities.has(f.properties.city_name)) {
-      unauthorizedCities.add(f.properties.city_name);
+  const unauthorizedEstatCodes = [];
+
+  // 1. Check boundaries.geojson features
+  features.forEach((f, idx) => {
+    const cName = f.properties?.city_name;
+    const eCode = String(f.properties?.e_stat_code || '').trim();
+    const cityCodeFromEstat = eCode.slice(0, 5);
+
+    if (!allowedCityNames.has(cName)) {
+      unauthorizedCities.add(cName || `(missing city_name at feature ${idx})`);
+    }
+
+    const expectedCityCode = allowedCityMap.get(cName);
+    if (expectedCityCode && cityCodeFromEstat && cityCodeFromEstat !== expectedCityCode) {
+      unauthorizedEstatCodes.push(`feature[${idx}]: city=${cName}, expected_code=${expectedCityCode}, actual_estat_prefix=${cityCodeFromEstat}`);
     }
   });
 
-  const pass = foundLegacy.length === 0 && unauthorizedCities.size === 0;
-  const actual = `LegacyKeywords: [${foundLegacy.join(', ')}], UnauthorizedCities: [${Array.from(unauthorizedCities).join(', ')}]`;
-  record('Rule-06', 'Previous District Zero Proven', pass, expected, actual, `Zero legacy keywords found, 100% of features belong to allowed municipalities`);
+  // 2. Check address_master.csv records
+  const unauthorizedAddressCities = new Set();
+  const unauthorizedAddressCodes = [];
+  addressRows.forEach((r, idx) => {
+    if (!allowedCityNames.has(r.city_name)) {
+      unauthorizedAddressCities.add(r.city_name || `(missing city_name at row ${idx + 2})`);
+    }
+    const expectedCityCode = allowedCityMap.get(r.city_name);
+    const cityCodeFromEstat = String(r.e_stat_code || '').trim().slice(0, 5);
+    if (expectedCityCode && cityCodeFromEstat && cityCodeFromEstat !== expectedCityCode) {
+      unauthorizedAddressCodes.push(`row[${r.rowId}]: city=${r.city_name}, expected_code=${expectedCityCode}, actual_estat_prefix=${cityCodeFromEstat}`);
+    }
+  });
+
+  // 3. Check election_history.json records if present
+  const unauthorizedElectionCities = new Set();
+  if (fs.existsSync(electionFile)) {
+    try {
+      const ehData = JSON.parse(fs.readFileSync(electionFile, 'utf8'));
+      if (Array.isArray(ehData.elections)) {
+        ehData.elections.forEach((el, elIdx) => {
+          const munis = el.municipalities || {};
+          Object.keys(munis).forEach(cityName => {
+            if (!allowedCityNames.has(cityName)) {
+              unauthorizedElectionCities.add(cityName);
+            }
+          });
+        });
+      }
+    } catch (e) {
+      unauthorizedElectionCities.add(`(parse error: ${e.message})`);
+    }
+  }
+
+  const totalViolations = unauthorizedCities.size + unauthorizedEstatCodes.length + unauthorizedAddressCities.size + unauthorizedAddressCodes.length + unauthorizedElectionCities.size;
+  const pass = totalViolations === 0;
+
+  const actual = pass
+    ? `100% verified against Target District SSOT: ${Array.from(allowedCityNames).join(', ')} (${Array.from(allowedCityCodes).join(', ')}) across boundaries, address_master, and election_history`
+    : `Violations: BoundariesUnauthorizedCities=[${Array.from(unauthorizedCities).join(', ')}], BoundariesCodeMismatches=${unauthorizedEstatCodes.length}, AddressUnauthorizedCities=[${Array.from(unauthorizedAddressCities).join(', ')}], AddressCodeMismatches=${unauthorizedAddressCodes.length}, ElectionUnauthorizedCities=[${Array.from(unauthorizedElectionCities).join(', ')}]`;
+
+  record('Rule-06', 'Target District Whitelist Purity', pass, expected, actual, `SSOT: ${Array.from(allowedCityNames).join(', ')}`);
 }
 
 // ----------------------------------------------------------------------------
@@ -350,9 +394,57 @@ const features = boundsRaw.features || [];
 }
 
 // ----------------------------------------------------------------------------
+// Rule 9: Universal Engine Purity (active/ Zero District-Specific Leaks)
+// ----------------------------------------------------------------------------
+{
+  const expected = 'Zero Target District-specific identifiers (city_name, city_code) leaked into active/ universal engine';
+  const activeDir = path.join(rootDir, 'active');
+
+  function scanDir(dir) {
+    let files = [];
+    if (!fs.existsSync(dir)) return files;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const ent of entries) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        files = files.concat(scanDir(full));
+      } else if (ent.isFile() && !ent.name.endsWith('.png') && !ent.name.endsWith('.ico')) {
+        files.push(full);
+      }
+    }
+    return files;
+  }
+
+  const activeFiles = scanDir(activeDir);
+  const targetIdentifiers = [];
+  muniRows.forEach(m => {
+    if (m.city_name) targetIdentifiers.push({ type: 'city_name', value: m.city_name });
+    if (m.city_code) targetIdentifiers.push({ type: 'city_code', value: m.city_code });
+  });
+
+  const leaks = [];
+  activeFiles.forEach(f => {
+    const content = fs.readFileSync(f, 'utf8');
+    const relPath = path.relative(rootDir, f);
+    targetIdentifiers.forEach(target => {
+      if (content.includes(target.value)) {
+        leaks.push({ file: relPath, matched: target.value, type: target.type });
+      }
+    });
+  });
+
+  const pass = leaks.length === 0;
+  const actual = pass
+    ? `Checked ${activeFiles.length} files in active/, 0 leaks of Target District identifiers (${targetIdentifiers.map(t => t.value).join(', ')})`
+    : `Detected ${leaks.length} leaks in active/: ${leaks.slice(0, 5).map(l => `${l.file} [${l.matched}]`).join(', ')}`;
+
+  record('Rule-09', 'Universal Engine Purity', pass, expected, actual, `active/ scanned ${activeFiles.length} files against Target SSOT`);
+}
+
+// ----------------------------------------------------------------------------
 // Audit Summary
 // ----------------------------------------------------------------------------
-auditResults.summary.totalRules = 8;
+auditResults.summary.totalRules = 9;
 auditResults.summary.status = auditResults.summary.failedRules === 0 ? 'PASS' : 'FAIL';
 console.log('===============================================================');
 console.log(`STAGE 1 AUDIT RESULT: ${auditResults.summary.status} (${auditResults.summary.passedRules}/${auditResults.summary.totalRules} rules passed)`);

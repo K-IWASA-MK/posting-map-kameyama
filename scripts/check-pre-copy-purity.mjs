@@ -120,7 +120,7 @@ function recordCheck(id, name, pass, detail) {
   const boundsPath = path.join(rootDir, 'data', 'boundaries.geojson');
   const muniPath = path.join(rootDir, 'data', 'municipality_master.csv');
   const mapPath = path.join(rootDir, 'data', 'area_mapping.json');
-  const electionPath = path.join(rootDir, 'docs', 'election_history.json');
+  const electionPath = path.join(rootDir, 'data', 'election_history.json');
 
   let addrRows = 0;
   if (fs.existsSync(addressPath)) {

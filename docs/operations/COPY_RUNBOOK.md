@@ -94,7 +94,7 @@ AI社員がAPIおよび自動化スクリプトを用いて、新地区専用の
 2. **マスター3点セットの自動生成**:
    - `python3 scripts/generate-boundaries-geojson.py --city-codes "<自治体コード:自治体名>"` を実行し、`address_master.csv`, `boundaries.geojson`, `municipality_master.csv` を生成。
 3. **過去3回の選挙データの調達・反映**:
-   - 総務省および各自治体選挙管理委員会の公式確定データに基づき、対象地区の**直近過去3回の選挙結果（投票率等）**を [docs/election_history.json](file:///Volumes/SSD_DATA/posting-map-okayama-02/docs/election_history.json) へ正確に投入。
+   - 総務省および各自治体選挙管理委員会の公式確定データに基づき、対象地区の**直近過去3回の選挙結果（投票率等）**を [data/election_history.json](data/election_history.json) へ正確に投入。
 4. **エリアマッピング初期化**:
    - `data/area_mapping.json` を空配列 `[]` に初期化。
 5. **データ品質ゲート自動判定**:

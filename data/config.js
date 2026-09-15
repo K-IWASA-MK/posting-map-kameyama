@@ -7,7 +7,8 @@ window.PMS_CLIENT_CONFIG = {
   },
   staticMaster: {
     addressCsvFilename: "address_master.csv",
-    boundariesGeojsonFilename: "boundaries.geojson"
+    boundariesGeojsonFilename: "boundaries.geojson",
+    electionHistoryFilename: "election_history.json"
   },
   line: {
     liffId: "2010941735-IbOXhzpJ"

@@ -11,7 +11,7 @@
   "data/boundaries.geojson",
   "data/municipality_master.csv",
   "data/area_mapping.json",
-  "docs/election_history.json",
+  "data/election_history.json",
   "data/raw/33000-19.0b.zip",
   "data/raw/33000-19.0b/19.0b.html",
   "data/raw/33000-19.0b/33_2025.csv",

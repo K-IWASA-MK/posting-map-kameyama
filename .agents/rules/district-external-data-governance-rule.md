@@ -85,7 +85,7 @@ Git リポジトリには、汎用OSとしての再現性とアプリケーシ�
 | 分類 | 格納パス | 具体的内容 |
 | :--- | :--- | :--- |
 | **A. 汎用OS資産** | `active/`<br>`scripts/`<br>`.agents/rules/`<br>`docs/` | アプリケーション本体コード、保守・監査用正式スクリプト、基本就業規則、設計仕様書 |
-| **B. 地区の確定実行データ** | `data/address_master.csv`<br>`data/boundaries.geojson`<br>`data/municipality_master.csv`<br>`data/area_mapping.json`<br>`docs/election_history.json` | 厳格な検証と監査を通過し、アプリ（Hアプリ・Manager）が実行時に直接参照・稼働する「地区確定実行データ」（原本バイナリは含まない） |
+| **B. 地区の確定実行データ** | `data/address_master.csv`<br>`data/boundaries.geojson`<br>`data/municipality_master.csv`<br>`data/area_mapping.json`<br>`data/election_history.json` | 厳格な検証と監査を通過し、アプリ（Hアプリ・Manager）が実行時に直接参照・稼働する「地区確定実行データ」（原本バイナリは含まない） |
 | **C. 正式な証跡** | `.agents/records/` | 公式一次資料との突合結果、SSOT 確定記録、整合性監査レポート、意思決定記録（Markdown 表形式） |
 
 ---
@@ -165,7 +165,7 @@ Drive 原本 ➔ [正式スクリプト] ➔ 中間データ ➔ [機械監査�
 | 分類 | 対象ファイル・ディレクトリ | コピー時の取り扱い |
 | :--- | :--- | :--- |
 | **A. そのままコピー** | `active/`<br>`scripts/`<br>`.agents/rules/`<br>`docs/` (汎用マニュアル・アーキテクチャ・運用規程) | 汎用OSコアとして一切改変せず無傷でコピーする |
-| **B. 新地区用に交換・生成（地区確定実行データ）** | `data/address_master.csv`<br>`data/boundaries.geojson`<br>`data/municipality_master.csv`<br>`docs/election_history.json` | 新地区専用 Drive 原本から新規生成・監査した地区確定実行データへ丸ごと差し替える |
+| **B. 新地区用に交換・生成（地区確定実行データ）** | `data/address_master.csv`<br>`data/boundaries.geojson`<br>`data/municipality_master.csv`<br>`data/election_history.json` | 新地区専用 Drive 原本から新規生成・監査した地区確定実行データへ丸ごと差し替える |
 | **C. 初期化** | `data/area_mapping.json` | 新規地区では必ず空配列 `[]` に初期化する |
 | **D. 持ち込み絶対禁止** | 前地区の `scratch/`<br>前地区の外部一次資料 (PDF, Excel, ZIP, Shp)<br>前地区の中間検証物・画像 | **コピー元から一切持ち込んではならない**（新地区の Drive で新規取得・管理する） |
 

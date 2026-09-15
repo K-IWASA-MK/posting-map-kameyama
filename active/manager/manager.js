@@ -28,7 +28,7 @@ const DashboardState = {
   areaMapping: null, // 新旧エリア対応表（実績・ステータス継承用）
   boundariesGeoJson: null, // 国勢調査小地域境界GeoJSON（純粋地理背景）
   boundariesLayer: null, // Leaflet GeoJSON レイヤー
-  electionTurnout: null, // 衆院選・参院選 投票率SSOTデータ (docs/election_history.json)
+  electionTurnout: null, // 衆院選・参院選 投票率SSOTデータ (data/election_history.json)
   selectedPin: null, // 現在MAP上で選択中のピン/エリアデータ (右下エリア統計連動)
   selectedCity: 'ALL',
   currentFocus: 'areas',
@@ -1054,7 +1054,9 @@ function renderLiveFeed(liveRecords) {
 
 async function loadElectionTurnoutData() {
   try {
-    const res = await fetch('/docs/election_history.json');
+    const cfg = getStaticMasterConfig();
+    const filename = cfg.electionHistoryFilename || 'election_history.json';
+    const res = await fetchStaticDataFile(filename);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     DashboardState.electionTurnout = data;
