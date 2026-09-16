@@ -53,5 +53,6 @@
   "docs/operations/COPY_RUNBOOK.md",
   "active/manager/manager.js",
   "data/town_aliases.json",
-  "scripts/generate-boundaries-geojson.py"
+  "scripts/generate-boundaries-geojson.py",
+  "active/api/v2_api.js"
 ]
