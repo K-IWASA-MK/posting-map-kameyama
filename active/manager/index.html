@@ -496,8 +496,8 @@
             <div id="map" class="w-full h-full"></div>
 
             <!-- マップ上ピンタップ時の詳細オーバーレイ -->
-            <div id="map-area-detail" class="absolute bottom-3 left-3 min-w-[200px] max-w-[280px] w-auto p-2.5 rounded-xl bg-containerBg/95 border border-borderHighlight backdrop-blur-md z-[1000] hidden transition-all shadow-2xl">
-              <div class="flex items-center justify-between gap-3">
+            <div id="map-area-detail" class="absolute bottom-3 left-3 min-w-[150px] max-w-[210px] w-auto p-2.5 rounded-xl bg-containerBg/95 border border-borderHighlight backdrop-blur-md z-[1000] hidden transition-all shadow-2xl">
+              <div class="flex items-center justify-between gap-2">
                 <div class="min-w-0">
                   <div id="selected-area-name" class="font-bold text-xs text-white truncate">--</div>
                   <div class="text-[11px] text-textSub mt-0.5">
@@ -505,7 +505,7 @@
                   </div>
                   <div id="selected-area-meta" class="text-[10px] text-textSub/70 font-mono mt-0.5">--</div>
                 </div>
-                <button onclick="closeAreaDetail()" class="text-textSub hover:text-white px-2 py-1 text-xs flex-shrink-0">✕</button>
+                <button onclick="closeAreaDetail()" class="text-textSub hover:text-white px-1.5 py-1 text-xs flex-shrink-0 cursor-pointer">✕</button>
               </div>
             </div>
           </div>
