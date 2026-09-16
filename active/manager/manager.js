@@ -533,6 +533,19 @@ function toggleCityDropdown(event, isMobile) {
 
   const isHidden = listEl.classList.contains('hidden');
   if (isHidden) {
+    if (isMobile) {
+      const kpiBar = document.getElementById('mobile-situation-bar');
+      if (kpiBar && triggerEl) {
+        const kpiRect = kpiBar.getBoundingClientRect();
+        const triggerRect = triggerEl.getBoundingClientRect();
+        listEl.style.position = 'fixed';
+        listEl.style.top = `${kpiRect.top}px`;
+        listEl.style.height = `${kpiRect.height}px`;
+        listEl.style.maxHeight = `${kpiRect.height}px`;
+        listEl.style.left = `${triggerRect.left}px`;
+        listEl.style.width = `${triggerRect.width}px`;
+      }
+    }
     listEl.classList.remove('hidden');
     if (triggerEl) triggerEl.setAttribute('aria-expanded', 'true');
   } else {

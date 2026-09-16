@@ -209,7 +209,47 @@ async function runVerification() {
   if (!boundaryCheck.hasNoHorizontalScroll) throw new Error(`Horizontal scroll detected: scrollWidth=${boundaryCheck.docScrollWidth} > clientWidth=${boundaryCheck.docClientWidth}`);
   if (!boundaryCheck.isInternallyScrollable) throw new Error('Dropdown list is not internally scrollable');
 
-  // Screenshot 1: Dropdown Open (Perfect fit)
+  // 2.6. Vertical Height & KPI Alignment Verification
+  const verticalCheck = await mobilePage.evaluate(() => {
+    const kpi = document.getElementById('mobile-situation-bar');
+    const list = document.getElementById('mobile-city-selector-list');
+    const mapStage = document.getElementById('main-stage-container');
+
+    const kpiRect = kpi.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    const mapRect = mapStage.getBoundingClientRect();
+
+    return {
+      kpiTop: kpiRect.top,
+      kpiBottom: kpiRect.bottom,
+      kpiHeight: kpiRect.height,
+      dropdownTop: listRect.top,
+      dropdownBottom: listRect.bottom,
+      dropdownHeight: listRect.height,
+      mapTop: mapRect.top,
+      exactTopMatch: Math.abs(listRect.top - kpiRect.top) < 0.5,
+      exactBottomMatch: Math.abs(listRect.bottom - kpiRect.bottom) < 0.5,
+      exactHeightMatch: Math.abs(listRect.height - kpiRect.height) < 0.5,
+      noMapPenetration: listRect.bottom < mapRect.top,
+      gapToMap: mapRect.top - listRect.bottom
+    };
+  });
+
+  console.log(`\n📏 [VERTICAL KPI SYNCHRONIZATION AUDIT]`);
+  console.log(`- KPIカード: top=${verticalCheck.kpiTop.toFixed(1)}px, bottom=${verticalCheck.kpiBottom.toFixed(1)}px, height=${verticalCheck.kpiHeight.toFixed(1)}px`);
+  console.log(`- Dropdown:  top=${verticalCheck.dropdownTop.toFixed(1)}px, bottom=${verticalCheck.dropdownBottom.toFixed(1)}px, height=${verticalCheck.dropdownHeight.toFixed(1)}px`);
+  console.log(`- MAPカード: top=${verticalCheck.mapTop.toFixed(1)}px`);
+  console.log(`- 上端一致 (dropdown.top === KPI.top): ${verticalCheck.exactTopMatch ? 'PASS' : 'FAIL'}`);
+  console.log(`- 下端一致 (dropdown.bottom === KPI.bottom): ${verticalCheck.exactBottomMatch ? 'PASS' : 'FAIL'}`);
+  console.log(`- 高さ一致 (dropdown.height === KPI.height): ${verticalCheck.exactHeightMatch ? 'PASS' : 'FAIL'}`);
+  console.log(`- MAPカード侵入なし (dropdown.bottom < MAP.top): ${verticalCheck.noMapPenetration ? `PASS (クリアランス: ${verticalCheck.gapToMap.toFixed(1)}px)` : 'FAIL'}`);
+
+  if (!verticalCheck.exactTopMatch) throw new Error(`dropdown.top (${verticalCheck.dropdownTop}) !== KPI.top (${verticalCheck.kpiTop})`);
+  if (!verticalCheck.exactBottomMatch) throw new Error(`dropdown.bottom (${verticalCheck.dropdownBottom}) !== KPI.bottom (${verticalCheck.kpiBottom})`);
+  if (!verticalCheck.exactHeightMatch) throw new Error(`dropdown.height (${verticalCheck.dropdownHeight}) !== KPI.height (${verticalCheck.kpiHeight})`);
+  if (!verticalCheck.noMapPenetration) throw new Error(`MAP penetration detected: dropdown.bottom (${verticalCheck.dropdownBottom}) >= MAP.top (${verticalCheck.mapTop})`);
+
+  // Screenshot 1: Dropdown Open (Perfect fit with KPI height)
   const screenshot1Path = path.join(ARTIFACTS_DIR, 'mobile_town_selector_open.png');
   await mobilePage.screenshot({ path: screenshot1Path });
   console.log(`  📸 撮影: ${screenshot1Path}`);
