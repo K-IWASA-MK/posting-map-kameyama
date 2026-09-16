@@ -550,6 +550,20 @@ function closeCityDropdown() {
   });
 }
 
+// ドロップダウン外部クリック時に自動で閉じる
+document.addEventListener('click', (e) => {
+  ['city-selector', 'mobile-city-selector'].forEach(suffix => {
+    const listEl = document.getElementById(`${suffix}-list`);
+    const triggerEl = document.getElementById(`${suffix}-trigger`);
+    if (listEl && !listEl.classList.contains('hidden')) {
+      if (!listEl.contains(e.target) && !triggerEl?.contains(e.target)) {
+        listEl.classList.add('hidden');
+        if (triggerEl) triggerEl.setAttribute('aria-expanded', 'false');
+      }
+    }
+  });
+});
+
 function selectCity(cityName) {
   DashboardState.selectedCity = cityName;
   const labelText = cityName === 'ALL' ? '全域' : cityName;
@@ -568,7 +582,7 @@ function selectCity(cityName) {
 }
 
 function updateCitySelectorHighlight(selectedCity) {
-  ['city-selector-list', 'mobile-city-selector-list'].forEach(listId => {
+  ['city-selector-list'].forEach(listId => {
     const listEl = document.getElementById(listId);
     if (!listEl) return;
 
@@ -595,10 +609,7 @@ function populateCitySelector(cities) {
   const currentLabelEl = document.getElementById('city-selector-current');
   if (currentLabelEl) currentLabelEl.textContent = labelText;
 
-  const mobileLabelEl = document.getElementById('mobile-city-selector-current');
-  if (mobileLabelEl) mobileLabelEl.textContent = labelText;
-
-  ['city-selector-list', 'mobile-city-selector-list'].forEach(listId => {
+  ['city-selector-list'].forEach(listId => {
     const listEl = document.getElementById(listId);
     if (!listEl) return;
     listEl.innerHTML = '';
@@ -628,64 +639,76 @@ function populateCitySelector(cities) {
 }
 
 /**
- * KAMEYAMA地方選挙モデル: 104エリア選択リストの動的生成
+ * KAMEYAMA地方選挙モデル: 104エリア選択リストの動的生成 (PC & モバイル両対応)
  */
 function populateAreaSelector(pins) {
-  const listEl = document.getElementById('area-selector-list');
+  const pcListEl = document.getElementById('area-selector-list');
+  const mobileListEl = document.getElementById('mobile-city-selector-list');
   const countEl = document.getElementById('area-selector-count');
-  if (!listEl) return;
-
   if (countEl && pins) {
     countEl.textContent = pins.length;
   }
 
-  listEl.innerHTML = '';
   const currentSelected = DashboardState.selectedTownId || 'ALL';
 
-  // 1. 「全域」ボタン
-  const allBtn = document.createElement('button');
-  allBtn.type = 'button';
-  allBtn.setAttribute('data-town-id', 'ALL');
-  allBtn.onclick = (e) => {
-    e.stopPropagation();
-    selectTownArea('ALL');
-  };
-  allBtn.innerHTML = `<span class="truncate font-semibold text-xs">全域 (亀山市)</span><span class="town-check text-[11px] font-bold">${currentSelected === 'ALL' ? '✓' : ''}</span>`;
-  allBtn.className = currentSelected === 'ALL'
-    ? 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm'
-    : 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent';
-  listEl.appendChild(allBtn);
+  [pcListEl, mobileListEl].forEach(listEl => {
+    if (!listEl) return;
+    listEl.innerHTML = '';
 
-  if (!pins || pins.length === 0) return;
-
-  // 2. 各町丁目ボタン (104件)
-  pins.forEach(pin => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.setAttribute('data-town-id', String(pin.rowId));
-    btn.onclick = (e) => {
+    // 1. 「全域」ボタン
+    const allBtn = document.createElement('button');
+    allBtn.type = 'button';
+    allBtn.setAttribute('data-town-id', 'ALL');
+    allBtn.onclick = (e) => {
       e.stopPropagation();
-      selectTownArea(pin.rowId);
+      selectTownArea('ALL');
     };
-    const isSelected = String(currentSelected) === String(pin.rowId);
-    btn.innerHTML = `<span class="truncate text-xs">${escapeHtml(pin.townName)}</span><span class="town-check text-[11px] font-bold">${isSelected ? '✓' : ''}</span>`;
-    btn.className = isSelected
-      ? 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm'
-      : 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent';
-    listEl.appendChild(btn);
+    allBtn.innerHTML = `<span class="truncate font-semibold text-xs">全域 (亀山市)</span><span class="town-check text-[11px] font-bold">${currentSelected === 'ALL' ? '✓' : ''}</span>`;
+    allBtn.className = currentSelected === 'ALL'
+      ? 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm cursor-pointer'
+      : 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent cursor-pointer';
+    listEl.appendChild(allBtn);
+
+    if (!pins || pins.length === 0) return;
+
+    // 2. 各町丁目ボタン (104件)
+    pins.forEach(pin => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-town-id', String(pin.rowId));
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        selectTownArea(pin.rowId);
+      };
+      const isSelected = String(currentSelected) === String(pin.rowId);
+      btn.innerHTML = `<span class="truncate text-xs">${escapeHtml(pin.townName)}</span><span class="town-check text-[11px] font-bold">${isSelected ? '✓' : ''}</span>`;
+      btn.className = isSelected
+        ? 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm cursor-pointer'
+        : 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent cursor-pointer';
+      listEl.appendChild(btn);
+    });
   });
 }
 
 /**
- * town_nameクリック時の該当ピンへの直接移動・ズームおよびフォーカス
+ * town_nameクリック時の該当ピンへの直接移動・ズームおよびフォーカス (PC & モバイル共通)
  */
 function selectTownArea(target) {
   DashboardState.selectedTownId = target;
-  updateAreaSelectorHighlight(target);
 
-  if (!DashboardState.map) return;
+  // モバイルラベルの更新
+  const mobileLabelEl = document.getElementById('mobile-city-selector-current');
+  // モバイルドロップダウンを閉じる
+  const mobileList = document.getElementById('mobile-city-selector-list');
+  if (mobileList) mobileList.classList.add('hidden');
+  const mobileTrigger = document.getElementById('mobile-city-selector-trigger');
+  if (mobileTrigger) mobileTrigger.setAttribute('aria-expanded', 'false');
 
   if (target === 'ALL') {
+    if (mobileLabelEl) mobileLabelEl.textContent = '全域';
+    updateAreaSelectorHighlight('ALL');
+
+    if (!DashboardState.map) return;
     DashboardState.selectedPin = null;
     if (DashboardState.masterPins && DashboardState.masterPins.length > 0) {
       const validCoords = DashboardState.masterPins
@@ -700,7 +723,12 @@ function selectTownArea(target) {
   }
 
   const pin = DashboardState.masterPins.find(p => String(p.rowId) === String(target));
-  if (!pin || !isFinite(pin.lat) || !isFinite(pin.lng) || pin.lat === 0) return;
+  if (!pin) return;
+
+  if (mobileLabelEl) mobileLabelEl.textContent = pin.townName;
+  updateAreaSelectorHighlight(target);
+
+  if (!DashboardState.map || !isFinite(pin.lat) || !isFinite(pin.lng) || pin.lat === 0) return;
 
   // 該当ピンへマップ移動・ズーム
   DashboardState.map.setView([pin.lat, pin.lng], 16, { animate: true });
@@ -725,22 +753,24 @@ function selectTownArea(target) {
 }
 
 function updateAreaSelectorHighlight(selectedTownId) {
-  const listEl = document.getElementById('area-selector-list');
-  if (!listEl) return;
+  ['area-selector-list', 'mobile-city-selector-list'].forEach(listId => {
+    const listEl = document.getElementById(listId);
+    if (!listEl) return;
 
-  const buttons = listEl.querySelectorAll('button[data-town-id]');
-  buttons.forEach(btn => {
-    const val = btn.getAttribute('data-town-id');
-    const isSelected = String(val) === String(selectedTownId);
-    if (isSelected) {
-      btn.className = 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm';
-      const checkSpan = btn.querySelector('.town-check');
-      if (checkSpan) checkSpan.textContent = '✓';
-    } else {
-      btn.className = 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent';
-      const checkSpan = btn.querySelector('.town-check');
-      if (checkSpan) checkSpan.textContent = '';
-    }
+    const buttons = listEl.querySelectorAll('button[data-town-id]');
+    buttons.forEach(btn => {
+      const val = btn.getAttribute('data-town-id');
+      const isSelected = String(val) === String(selectedTownId);
+      if (isSelected) {
+        btn.className = 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm cursor-pointer';
+        const checkSpan = btn.querySelector('.town-check');
+        if (checkSpan) checkSpan.textContent = '✓';
+      } else {
+        btn.className = 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent cursor-pointer';
+        const checkSpan = btn.querySelector('.town-check');
+        if (checkSpan) checkSpan.textContent = '';
+      }
+    });
   });
 }
 
