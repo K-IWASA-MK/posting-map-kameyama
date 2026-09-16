@@ -404,6 +404,7 @@ async function loadAddressMaster() {
       DashboardState.cities = masterCities;
       populateCitySelector(masterCities);
     }
+    populateAreaSelector(pins);
     bindBoundariesStatsToPins();
     renderPinsOnMap(DashboardState.map, DashboardState.markersLayer, pins);
 
@@ -623,6 +624,123 @@ function populateCitySelector(cities) {
         : 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent';
       listEl.appendChild(btn);
     });
+  });
+}
+
+/**
+ * KAMEYAMA地方選挙モデル: 104エリア選択リストの動的生成
+ */
+function populateAreaSelector(pins) {
+  const listEl = document.getElementById('area-selector-list');
+  const countEl = document.getElementById('area-selector-count');
+  if (!listEl) return;
+
+  if (countEl && pins) {
+    countEl.textContent = pins.length;
+  }
+
+  listEl.innerHTML = '';
+  const currentSelected = DashboardState.selectedTownId || 'ALL';
+
+  // 1. 「全域」ボタン
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.setAttribute('data-town-id', 'ALL');
+  allBtn.onclick = (e) => {
+    e.stopPropagation();
+    selectTownArea('ALL');
+  };
+  allBtn.innerHTML = `<span class="truncate font-semibold text-xs">全域 (亀山市)</span><span class="town-check text-[11px] font-bold">${currentSelected === 'ALL' ? '✓' : ''}</span>`;
+  allBtn.className = currentSelected === 'ALL'
+    ? 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm'
+    : 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent';
+  listEl.appendChild(allBtn);
+
+  if (!pins || pins.length === 0) return;
+
+  // 2. 各町丁目ボタン (104件)
+  pins.forEach(pin => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('data-town-id', String(pin.rowId));
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      selectTownArea(pin.rowId);
+    };
+    const isSelected = String(currentSelected) === String(pin.rowId);
+    btn.innerHTML = `<span class="truncate text-xs">${escapeHtml(pin.townName)}</span><span class="town-check text-[11px] font-bold">${isSelected ? '✓' : ''}</span>`;
+    btn.className = isSelected
+      ? 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm'
+      : 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent';
+    listEl.appendChild(btn);
+  });
+}
+
+/**
+ * town_nameクリック時の該当ピンへの直接移動・ズームおよびフォーカス
+ */
+function selectTownArea(target) {
+  DashboardState.selectedTownId = target;
+  updateAreaSelectorHighlight(target);
+
+  if (!DashboardState.map) return;
+
+  if (target === 'ALL') {
+    DashboardState.selectedPin = null;
+    if (DashboardState.masterPins && DashboardState.masterPins.length > 0) {
+      const validCoords = DashboardState.masterPins
+        .filter(p => isFinite(p.lat) && isFinite(p.lng) && p.lat !== 0 && p.lng !== 0)
+        .map(p => [p.lat, p.lng]);
+      if (validCoords.length > 0) {
+        const bounds = L.latLngBounds(validCoords);
+        DashboardState.map.fitBounds(bounds, { padding: [20, 20], maxZoom: 13 });
+      }
+    }
+    return;
+  }
+
+  const pin = DashboardState.masterPins.find(p => String(p.rowId) === String(target));
+  if (!pin || !isFinite(pin.lat) || !isFinite(pin.lng) || pin.lat === 0) return;
+
+  // 該当ピンへマップ移動・ズーム
+  DashboardState.map.setView([pin.lat, pin.lng], 16, { animate: true });
+
+  // 該当ピンをフォーカス＆詳細更新
+  DashboardState.selectedPin = pin;
+  const completedList = (DashboardState.globalPinStatus && DashboardState.globalPinStatus.completed) || [];
+  const inProgressList = (DashboardState.globalPinStatus && DashboardState.globalPinStatus.inProgress) || [];
+  const isCompleted = completedList.includes(pin.rowId);
+  const isInProgress = inProgressList.includes(pin.rowId);
+  const statusCfg = getAreaStatusConfig(isCompleted, isInProgress);
+
+  if (typeof showAreaDetail === 'function') {
+    showAreaDetail({
+      name: pin.fullName || `${pin.cityName} ${pin.townName}`,
+      statusCfg: statusCfg
+    });
+  }
+  if (typeof renderRightBottomAreaStats === 'function') {
+    renderRightBottomAreaStats(pin);
+  }
+}
+
+function updateAreaSelectorHighlight(selectedTownId) {
+  const listEl = document.getElementById('area-selector-list');
+  if (!listEl) return;
+
+  const buttons = listEl.querySelectorAll('button[data-town-id]');
+  buttons.forEach(btn => {
+    const val = btn.getAttribute('data-town-id');
+    const isSelected = String(val) === String(selectedTownId);
+    if (isSelected) {
+      btn.className = 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm';
+      const checkSpan = btn.querySelector('.town-check');
+      if (checkSpan) checkSpan.textContent = '✓';
+    } else {
+      btn.className = 'w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent';
+      const checkSpan = btn.querySelector('.town-check');
+      if (checkSpan) checkSpan.textContent = '';
+    }
   });
 }
 
