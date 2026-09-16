@@ -1388,8 +1388,8 @@ function renderRightTopTurnout(selectedCity) {
   // 前回比バッジ（履歴が1件しかない場合は非表示）
   const diffBadgeHtml = data.showDiff
     ? `
-      <span class="text-xs font-mono font-medium text-[#94A3B8] bg-[#94A3B8]/10 border border-[#94A3B8]/20 px-2.5 py-1 rounded">
-        前回比 ${data.diffPt}pt ${data.diffIcon}
+      <span class="inline-flex items-center gap-1 text-xs font-mono font-medium text-[#94A3B8] bg-[#94A3B8]/10 border border-[#94A3B8]/20 px-2.5 py-1 rounded whitespace-nowrap flex-shrink-0">
+        前回比 ${data.diffPt}pt <span>${data.diffIcon}</span>
       </span>
     `
     : '';
@@ -1405,13 +1405,17 @@ function renderRightTopTurnout(selectedCity) {
           <span class="text-xs font-bold text-brand bg-brand/10 border border-brand/20 px-2.5 py-0.5 rounded">${data.name}</span>
         </div>
 
-        <div class="mt-3 flex items-baseline justify-between">
-          <div>
-            <div class="text-[28px] font-mono font-bold text-white tracking-tight leading-none">${data.turnout}<span class="text-base font-normal text-textSub ml-0.5">%</span></div>
-            <div class="text-xs text-textSub mt-1.5 font-medium">${data.electionName} (${data.electionDate})</div>
+        <div class="mt-3">
+          <div class="flex items-center justify-between">
+            <div class="text-[28px] font-mono font-bold text-white tracking-tight leading-none">
+              ${data.turnout}<span class="text-base font-normal text-textSub ml-0.5">%</span>
+            </div>
+            <div class="text-right flex-shrink-0">
+              ${diffBadgeHtml}
+            </div>
           </div>
-          <div class="text-right">
-            ${diffBadgeHtml}
+          <div class="text-xs text-textSub mt-1.5 font-medium truncate" title="${data.electionName} (${data.electionDate})">
+            ${data.electionName} <span class="font-mono">(${data.electionDate})</span>
           </div>
         </div>
 
