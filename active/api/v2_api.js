@@ -40,15 +40,21 @@ function verifyProvisioningToken(token) {
   }
   const props = PropertiesService.getScriptProperties();
   const storedHash = (props.getProperty('PROVISIONING_TOKEN_HASH') || '').trim().toLowerCase();
-  const DEFAULT_PROVISIONING_HASH = '17765f8109b824a7ab33a8ed3728166294f2022a9c9bb31eef4291240d071af2';
   const CORE_PROVISIONING_HASH = 'cdbbd0eedf4ea2c25de8a03fda87017740261bd64b898e98de687906a5d4cc90';
-  if (!storedHash && !DEFAULT_PROVISIONING_HASH && !CORE_PROVISIONING_HASH) {
-    return { success: false, code: "UNAUTHORIZED", message: "PROVISIONING_TOKEN_HASH is not configured in GAS Script Properties." };
-  }
+
   const clientHash = computeSha256(token.trim()).toLowerCase();
-  if (clientHash === storedHash || clientHash === DEFAULT_PROVISIONING_HASH || clientHash === CORE_PROVISIONING_HASH) {
+
+  if (storedHash) {
+    if (clientHash === storedHash) {
+      return { success: true };
+    }
+    return { success: false, code: "UNAUTHORIZED", message: "Invalid provisioning token for configured district." };
+  }
+
+  if (clientHash === CORE_PROVISIONING_HASH) {
     return { success: true };
   }
+
   return { success: false, code: "UNAUTHORIZED", message: "Invalid provisioning token." };
 }
 /**
