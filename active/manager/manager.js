@@ -1511,7 +1511,7 @@ function renderRightBottomAreaStats(selectedPin) {
           ${statusBadgeHtml}
         </div>
 
-        <div class="mt-3 space-y-2.5">
+        <div class="mt-12 space-y-2.5">
           <div class="flex justify-between items-center text-[13px]">
             <span class="text-textSub flex items-center gap-1"><span>🏠</span><span>世帯数</span></span>
             <span class="font-mono font-bold text-white text-[15px]">${households.toLocaleString()} <span class="text-xs font-normal text-textSub">世帯</span></span>
