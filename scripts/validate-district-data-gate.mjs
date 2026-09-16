@@ -323,12 +323,101 @@ const features = boundsRaw.features || [];
     }
   }
 
-  const totalViolations = unauthorizedCities.size + unauthorizedEstatCodes.length + unauthorizedAddressCities.size + unauthorizedAddressCodes.length + unauthorizedElectionCities.size;
+  const dataDir = path.join(rootDir, 'data');
+  const unauthorizedDataFileEntries = [];
+  const scannedDataFiles = [];
+
+  const codeKeyPattern = /^(city_code|municipality_code|cityCode|municipalityCode|pref_code|prefecture_code)$/i;
+  const nameKeyPattern = /^(city_name|municipality_name|cityName|municipalityName|pref_name|prefecture_name)$/i;
+
+  function inspectJsonValue(val, filePath, breadcrumb = '') {
+    if (val === null || val === undefined) return;
+    if (Array.isArray(val)) {
+      val.forEach((item, idx) => inspectJsonValue(item, filePath, `${breadcrumb}[${idx}]`));
+    } else if (typeof val === 'object') {
+      for (const [k, v] of Object.entries(val)) {
+        const currentPath = breadcrumb ? `${breadcrumb}.${k}` : k;
+        if (typeof v === 'string' || typeof v === 'number') {
+          const strVal = String(v).trim();
+          if (codeKeyPattern.test(k)) {
+            const code5 = strVal.slice(0, 5);
+            if (!allowedCityCodes.has(strVal) && !allowedCityCodes.has(code5)) {
+              unauthorizedDataFileEntries.push(`${path.basename(filePath)} (${currentPath}): unauthorized code "${strVal}"`);
+            }
+          } else if (nameKeyPattern.test(k)) {
+            if (!allowedCityNames.has(strVal)) {
+              unauthorizedDataFileEntries.push(`${path.basename(filePath)} (${currentPath}): unauthorized municipality "${strVal}"`);
+            }
+          }
+        }
+        inspectJsonValue(v, filePath, currentPath);
+      }
+    }
+  }
+
+  if (fs.existsSync(dataDir)) {
+    const entries = fs.readdirSync(dataDir, { withFileTypes: true });
+    entries.forEach(ent => {
+      if (ent.isDirectory()) return;
+      const fileName = ent.name;
+      if (fileName === 'address_master.csv' || fileName === 'boundaries.geojson' || fileName === 'municipality_master.csv' || fileName === 'election_history.json') {
+        return;
+      }
+      const fullPath = path.join(dataDir, fileName);
+
+      if (fileName.endsWith('.json')) {
+        scannedDataFiles.push(fileName);
+        try {
+          const jsonContent = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+          inspectJsonValue(jsonContent, fullPath);
+        } catch (err) {
+          unauthorizedDataFileEntries.push(`${fileName}: JSON parse error: ${err.message}`);
+        }
+      } else if (fileName.endsWith('.csv')) {
+        scannedDataFiles.push(fileName);
+        try {
+          const csvLines = fs.readFileSync(fullPath, 'utf8').trim().split(/\r?\n/);
+          if (csvLines.length > 0) {
+            const headers = csvLines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const codeIndices = [];
+            const nameIndices = [];
+            headers.forEach((h, idx) => {
+              if (codeKeyPattern.test(h)) codeIndices.push({ idx, header: h });
+              if (nameKeyPattern.test(h)) nameIndices.push({ idx, header: h });
+            });
+
+            if (codeIndices.length > 0 || nameIndices.length > 0) {
+              for (let i = 1; i < csvLines.length; i++) {
+                const cols = csvLines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                codeIndices.forEach(({ idx, header }) => {
+                  const val = cols[idx] || '';
+                  const code5 = val.slice(0, 5);
+                  if (val && !allowedCityCodes.has(val) && !allowedCityCodes.has(code5)) {
+                    unauthorizedDataFileEntries.push(`${fileName} (row ${i + 1}, ${header}): unauthorized code "${val}"`);
+                  }
+                });
+                nameIndices.forEach(({ idx, header }) => {
+                  const val = cols[idx] || '';
+                  if (val && !allowedCityNames.has(val)) {
+                    unauthorizedDataFileEntries.push(`${fileName} (row ${i + 1}, ${header}): unauthorized municipality "${val}"`);
+                  }
+                });
+              }
+            }
+          }
+        } catch (err) {
+          unauthorizedDataFileEntries.push(`${fileName}: CSV read error: ${err.message}`);
+        }
+      }
+    });
+  }
+
+  const totalViolations = unauthorizedCities.size + unauthorizedEstatCodes.length + unauthorizedAddressCities.size + unauthorizedAddressCodes.length + unauthorizedElectionCities.size + unauthorizedDataFileEntries.length;
   const pass = totalViolations === 0;
 
   const actual = pass
-    ? `100% verified against Target District SSOT: ${Array.from(allowedCityNames).join(', ')} (${Array.from(allowedCityCodes).join(', ')}) across boundaries, address_master, and election_history`
-    : `Violations: BoundariesUnauthorizedCities=[${Array.from(unauthorizedCities).join(', ')}], BoundariesCodeMismatches=${unauthorizedEstatCodes.length}, AddressUnauthorizedCities=[${Array.from(unauthorizedAddressCities).join(', ')}], AddressCodeMismatches=${unauthorizedAddressCodes.length}, ElectionUnauthorizedCities=[${Array.from(unauthorizedElectionCities).join(', ')}]`;
+    ? `100% verified against Target District SSOT: ${Array.from(allowedCityNames).join(', ')} (${Array.from(allowedCityCodes).join(', ')}) across boundaries, address_master, election_history, and data/ files (${scannedDataFiles.join(', ') || 'none additional'})`
+    : `Violations: BoundariesUnauthorizedCities=[${Array.from(unauthorizedCities).join(', ')}], BoundariesCodeMismatches=${unauthorizedEstatCodes.length}, AddressUnauthorizedCities=[${Array.from(unauthorizedAddressCities).join(', ')}], AddressCodeMismatches=${unauthorizedAddressCodes.length}, ElectionUnauthorizedCities=[${Array.from(unauthorizedElectionCities).join(', ')}], DataFilesViolations=[${unauthorizedDataFileEntries.join('; ')}]`;
 
   record('Rule-06', 'Target District Whitelist Purity', pass, expected, actual, `SSOT: ${Array.from(allowedCityNames).join(', ')}`);
 }

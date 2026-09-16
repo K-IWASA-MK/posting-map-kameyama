@@ -652,7 +652,7 @@ function populateCitySelector(cities) {
 }
 
 /**
- * KAMEYAMA地方選挙モデル: 104エリア選択リストの動的生成 (PC & モバイル両対応)
+ * 地方選挙モデル: エリア選択リストの動的生成 (PC & モバイル両対応)
  */
 function populateAreaSelector(pins) {
   const pcListEl = document.getElementById('area-selector-list');
@@ -676,7 +676,7 @@ function populateAreaSelector(pins) {
       e.stopPropagation();
       selectTownArea('ALL');
     };
-    allBtn.innerHTML = `<span class="truncate font-semibold text-xs">全域 (亀山市)</span><span class="town-check text-[11px] font-bold">${currentSelected === 'ALL' ? '✓' : ''}</span>`;
+    allBtn.innerHTML = `<span class="truncate font-semibold text-xs">全域</span><span class="town-check text-[11px] font-bold">${currentSelected === 'ALL' ? '✓' : ''}</span>`;
     allBtn.className = currentSelected === 'ALL'
       ? 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between bg-brand/20 text-brand border border-brand/40 shadow-sm cursor-pointer'
       : 'w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between text-textSub hover:text-white hover:bg-white/5 border border-transparent cursor-pointer';

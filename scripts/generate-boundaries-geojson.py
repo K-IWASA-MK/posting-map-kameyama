@@ -7,7 +7,7 @@ e-Stat 小地域境界Shapefile原本と address_master.csv を名寄せ・集�
 boundaries.geojson を構築する汎用境界ETLスクリプト。
 
 自治体構成および地区固有の表記揺れ・集約ルールは、
-外部データ（municipality_master.csv, town_aliases.json）から動的に解決します。
+外部データ（municipality_master.csv, 必要に応じてtown_aliases.json）から動的に解決します。
 """
 
 import os
@@ -24,7 +24,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Generate boundaries.geojson from e-Stat raw shapefiles and address_master.csv')
     parser.add_argument('--master', default='data/address_master.csv', help='Path to address_master.csv')
     parser.add_argument('--muni-master', default='data/municipality_master.csv', help='Path to municipality_master.csv')
-    parser.add_argument('--aliases', default='data/town_aliases.json', help='Path to town_aliases.json')
+    parser.add_argument('--aliases', default=None, help='Path to town_aliases.json (optional, default: None)')
     parser.add_argument('--raw-dir', default='data/raw_estat_r2', help='Directory containing raw e-Stat shapefiles')
     parser.add_argument('--output', default='scratch/candidate_boundaries.geojson', help='Output GeoJSON path')
     parser.add_argument('--audit-output', default='scratch/boundary_audit_table.json', help='Audit table JSON path')
@@ -75,9 +75,13 @@ def load_city_codes(args):
     sys.exit(f"FATAL: Municipalities cannot be resolved. Specify --city-codes or ensure {args.muni_master} exists.")
 
 def load_alias_rules(aliases_path):
-    """Load town alias and aggregation rules from town_aliases.json."""
+    """Load town alias and aggregation rules from town_aliases.json if specified."""
+    if not aliases_path:
+        print("[Boundary ETL] No alias file specified. Running with zero aliases.")
+        return {}, {}, set()
+
     if not os.path.exists(aliases_path):
-        print(f"[Boundary ETL] No alias file found at {aliases_path}. Running with zero aliases.")
+        print(f"[Boundary ETL] Specified alias file not found at {aliases_path}. Running with zero aliases.")
         return {}, {}, set()
 
     with open(aliases_path, 'r', encoding='utf-8') as f:
