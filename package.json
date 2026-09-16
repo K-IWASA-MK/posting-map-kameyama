@@ -16,7 +16,7 @@
     "deploy:gas": "node scripts/safe-deploy.mjs",
     "provision:district": "node scripts/provision-district.mjs",
     "check:provisioning": "node scripts/check-provisioning-gate.mjs",
-    "audit:gate": "node scripts/check-scope.mjs",
+    "audit:gate": "node scripts/check-scope.mjs && node scripts/validate-district-data-gate.mjs",
     "check:purity": "node scripts/check-pre-copy-purity.mjs",
     "check:copy-safe": "node scripts/test-copy-simulation.mjs"
   },

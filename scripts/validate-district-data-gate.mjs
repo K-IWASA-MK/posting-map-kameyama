@@ -355,12 +355,28 @@ const features = boundsRaw.features || [];
     }
   }
 
+  const ALLOWED_DATA_FILES = new Set([
+    'address_master.csv',
+    'boundaries.geojson',
+    'municipality_master.csv',
+    'election_history.json',
+    'config.js',
+    'area_mapping.json'
+  ]);
+
   if (fs.existsSync(dataDir)) {
     const entries = fs.readdirSync(dataDir, { withFileTypes: true });
     entries.forEach(ent => {
       if (ent.isDirectory()) return;
       const fileName = ent.name;
-      if (fileName === 'address_master.csv' || fileName === 'boundaries.geojson' || fileName === 'municipality_master.csv' || fileName === 'election_history.json') {
+      if (fileName === '.DS_Store' || fileName.startsWith('.')) return;
+
+      if (!ALLOWED_DATA_FILES.has(fileName)) {
+        unauthorizedDataFileEntries.push(`Unapproved file in data/: "${fileName}"`);
+        return;
+      }
+
+      if (fileName === 'address_master.csv' || fileName === 'boundaries.geojson' || fileName === 'municipality_master.csv' || fileName === 'election_history.json' || fileName === 'config.js') {
         return;
       }
       const fullPath = path.join(dataDir, fileName);
@@ -512,6 +528,7 @@ const features = boundsRaw.features || [];
   });
 
   const leaks = [];
+  const staticBindingPattern = /全域\s*[\(（][^\)）]+[\)）]/g;
   activeFiles.forEach(f => {
     const content = fs.readFileSync(f, 'utf8');
     const relPath = path.relative(rootDir, f);
@@ -520,6 +537,12 @@ const features = boundsRaw.features || [];
         leaks.push({ file: relPath, matched: target.value, type: target.type });
       }
     });
+    const matches = content.match(staticBindingPattern);
+    if (matches) {
+      matches.forEach(m => {
+        leaks.push({ file: relPath, matched: m, type: 'static_ui_binding_pattern' });
+      });
+    }
   });
 
   const pass = leaks.length === 0;

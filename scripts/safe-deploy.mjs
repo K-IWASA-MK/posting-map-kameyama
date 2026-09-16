@@ -42,7 +42,8 @@ async function main() {
     console.error('\n🛑 [Hard Stop] Working tree is dirty. Deploy requires a clean working tree.\n' + uncommitted);
     process.exit(1);
   }
-  runStep('Preflight Governance Gate', 'npm run audit:gate');
+  runStep('Preflight Scope & Governance Gate', 'node scripts/check-scope.mjs');
+  runStep('Preflight District Data Quality Gate', 'node scripts/validate-district-data-gate.mjs');
   // Step 1: Preflight SSOT Check
   runStep('Step 1: Preflight SSOT Check', 'npm run check:ssot');
 
