@@ -744,7 +744,7 @@ function selectTownArea(target) {
   if (!DashboardState.map || !isFinite(pin.lat) || !isFinite(pin.lng) || pin.lat === 0) return;
 
   // 該当ピンへマップ移動・ズーム
-  DashboardState.map.setView([pin.lat, pin.lng], 16, { animate: true });
+  DashboardState.map.setView([pin.lat, pin.lng], 15, { animate: true });
 
   // 該当ピンをフォーカス＆詳細更新
   DashboardState.selectedPin = pin;

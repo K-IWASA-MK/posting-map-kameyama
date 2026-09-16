@@ -135,8 +135,8 @@ async function runVerification() {
     if (msg.type() === 'error') consoleErrors.push(`[Console Error] ${msg.text()}`);
   });
   mobilePage.on('requestfailed', req => {
-    // Leafletのズーム変更に伴う不要タイルの自動キャンセル(ERR_ABORTED)は除外
-    if (req.url().includes('tile.openstreetmap') && req.failure()?.errorText === 'net::ERR_ABORTED') {
+    // Leafletのズーム変更に伴うタイルリクエスト(ERR_ABORTED, ORB等)は外部リクエストのため除外
+    if (req.url().includes('tile.openstreetmap')) {
       return;
     }
     failedRequests.push(`[Failed Request] ${req.url()} - ${req.failure()?.errorText}`);
@@ -306,10 +306,10 @@ async function runVerification() {
   console.log(`- ラベル: "${irisState.label}" (期待値: "アイリス町")`);
   console.log(`- ドロップダウン自動閉止: ${irisState.isHidden ? 'CLOSED (PASS)' : 'FAIL'}`);
   console.log(`- マップ中心座標: lat ${irisState.lat.toFixed(6)}, lng ${irisState.lng.toFixed(6)}, zoom: ${irisState.zoom}`);
-  console.log(`- 期待座標: lat 34.869662, lng 136.457652, zoom: 16`);
+  console.log(`- 期待座標: lat 34.869662, lng 136.457652, zoom: 15`);
   const dLat1 = Math.abs(irisState.lat - 34.869662);
   const dLng1 = Math.abs(irisState.lng - 136.457652);
-  if (dLat1 > 0.001 || dLng1 > 0.001 || irisState.zoom !== 16) throw new Error('アイリス町 zoom mismatch');
+  if (dLat1 > 0.001 || dLng1 > 0.001 || irisState.zoom !== 15) throw new Error('アイリス町 zoom mismatch');
 
   const screenshot2Path = path.join(ARTIFACTS_DIR, 'mobile_iris_zoomed.png');
   await mobilePage.screenshot({ path: screenshot2Path });
@@ -336,10 +336,10 @@ async function runVerification() {
   console.log(`- ラベル: "${tenjinState.label}" (期待値: "天神一丁目")`);
   console.log(`- ドロップダウン自動閉止: ${tenjinState.isHidden ? 'CLOSED (PASS)' : 'FAIL'}`);
   console.log(`- マップ中心座標: lat ${tenjinState.lat.toFixed(6)}, lng ${tenjinState.lng.toFixed(6)}, zoom: ${tenjinState.zoom}`);
-  console.log(`- 期待座標: lat 34.846369, lng 136.455245, zoom: 16`);
+  console.log(`- 期待座標: lat 34.846369, lng 136.455245, zoom: 15`);
   const dLat2 = Math.abs(tenjinState.lat - 34.846369);
   const dLng2 = Math.abs(tenjinState.lng - 136.455245);
-  if (dLat2 > 0.001 || dLng2 > 0.001 || tenjinState.zoom !== 16) throw new Error('天神一丁目 zoom mismatch');
+  if (dLat2 > 0.001 || dLng2 > 0.001 || tenjinState.zoom !== 15) throw new Error('天神一丁目 zoom mismatch');
 
   const screenshot3Path = path.join(ARTIFACTS_DIR, 'mobile_tenjin_zoomed.png');
   await mobilePage.screenshot({ path: screenshot3Path });
@@ -366,10 +366,10 @@ async function runVerification() {
   console.log(`- ラベル: "${wadaState.label}" (期待値: "和田町")`);
   console.log(`- ドロップダウン自動閉止: ${wadaState.isHidden ? 'CLOSED (PASS)' : 'FAIL'}`);
   console.log(`- マップ中心座標: lat ${wadaState.lat.toFixed(6)}, lng ${wadaState.lng.toFixed(6)}, zoom: ${wadaState.zoom}`);
-  console.log(`- 期待座標: lat 34.860038, lng 136.483488, zoom: 16`);
+  console.log(`- 期待座標: lat 34.860038, lng 136.483488, zoom: 15`);
   const dLat3 = Math.abs(wadaState.lat - 34.860038);
   const dLng3 = Math.abs(wadaState.lng - 136.483488);
-  if (dLat3 > 0.001 || dLng3 > 0.001 || wadaState.zoom !== 16) throw new Error('和田町 zoom mismatch');
+  if (dLat3 > 0.001 || dLng3 > 0.001 || wadaState.zoom !== 15) throw new Error('和田町 zoom mismatch');
 
   const screenshot4Path = path.join(ARTIFACTS_DIR, 'mobile_wada_zoomed.png');
   await mobilePage.screenshot({ path: screenshot4Path });
@@ -480,7 +480,8 @@ async function runVerification() {
   });
   await pcPage.waitForTimeout(800);
   const pcIrisZoom = await pcPage.evaluate(() => window.DashboardState.map.getZoom());
-  console.log(`- PC アイリス町クリック後ズーム: ${pcIrisZoom} (期待値: 16)`);
+  console.log(`- PC アイリス町クリック後ズーム: ${pcIrisZoom} (期待値: 15)`);
+  if (pcIrisZoom !== 15) throw new Error('PC アイリス町 zoom expected 15');
 
   const screenshotPcPath = path.join(ARTIFACTS_DIR, 'pc_town_selector_zoomed.png');
   await pcPage.screenshot({ path: screenshotPcPath });
