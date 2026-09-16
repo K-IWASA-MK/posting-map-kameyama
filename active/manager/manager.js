@@ -1346,7 +1346,7 @@ function renderRightTopTurnout(selectedCity) {
 
   const historyHtml = Array.isArray(data.history) && data.history.length > 0
     ? `
-      <div class="pt-2.5 mt-2.5 border-t border-borderNormal">
+      <div class="pt-2 border-t border-borderNormal">
         <div class="text-xs font-bold text-textSub mb-1.5 flex items-center justify-between">
           <span>投票率の推移</span>
           <span class="text-[11px] font-normal text-textSub/70">過去${data.history.length}回</span>
@@ -1371,14 +1371,14 @@ function renderRightTopTurnout(selectedCity) {
     const evText = data.eligibleVoters != null ? Number(data.eligibleVoters).toLocaleString() + '人' : '--';
     const vText = data.voters != null ? Number(data.voters).toLocaleString() + '人' : '--';
     subInfoHtml = `
-      <div class="pt-2.5 mt-2.5 border-t border-borderNormal flex items-center justify-between text-xs text-textSub font-mono">
+      <div class="pt-2 border-t border-borderNormal flex items-center justify-between text-xs text-textSub font-mono">
         <div>有権者: <span class="text-white font-semibold">${evText}</span></div>
         <div>投票者: <span class="text-white font-semibold">${vText}</span></div>
       </div>
     `;
   } else {
     subInfoHtml = `
-      <div class="pt-2.5 mt-2.5 border-t border-borderNormal flex items-center justify-between text-xs text-textSub font-mono">
+      <div class="pt-2 border-t border-borderNormal flex items-center justify-between text-xs text-textSub font-mono">
         <div>全国: <span class="text-white font-semibold">${data.nationalTurnout}%</span></div>
         <div>全域: <span class="text-white font-semibold">${data.districtTurnout}%</span></div>
       </div>
@@ -1395,8 +1395,9 @@ function renderRightTopTurnout(selectedCity) {
     : '';
 
   containerEl.innerHTML = `
-    <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between pb-2.5 border-b border-borderNormal">
+    <div class="flex flex-col justify-between h-full">
+      <!-- セクション1: ヘッダー -->
+      <div class="flex items-center justify-between pb-2 border-b border-borderNormal">
         <div class="flex items-center gap-1.5 text-sm font-bold text-white tracking-wide">
           <span>🗳️</span>
           <span>投票率データ</span>
@@ -1404,7 +1405,8 @@ function renderRightTopTurnout(selectedCity) {
         <span class="text-xs font-bold text-brand bg-brand/10 border border-brand/20 px-2.5 py-0.5 rounded">${data.name}</span>
       </div>
 
-      <div class="mt-3">
+      <!-- セクション2: メイン投票率 + 選挙名 -->
+      <div>
         <div class="flex items-center justify-between">
           <div class="text-[28px] font-mono font-bold text-white tracking-tight leading-none">
             ${data.turnout}<span class="text-base font-normal text-textSub ml-0.5">%</span>
@@ -1418,8 +1420,10 @@ function renderRightTopTurnout(selectedCity) {
         </div>
       </div>
 
+      <!-- セクション3: 有権者・投票者 -->
       ${subInfoHtml}
 
+      <!-- セクション4: 投票率の推移 -->
       ${historyHtml}
     </div>
   `;
