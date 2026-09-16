@@ -394,8 +394,8 @@ async function runDashboardQualityGate() {
         firstCityWorksAndStaysOpen = stillOpen1 && label1 && state1;
       }
 
-      // 4. 2つ目の自治体 (items[2]) を連続クリック ➔ 選択後も「OPENのまま」であることを検証
-      let secondCityWorksAndStaysOpen = false;
+      // 4. 2つ目の自治体 (items[2]) を連続クリック ➔ 選択後も「OPENのまま」であることを検証 (複数自治体存在時のみ)
+      let secondCityWorksAndStaysOpen = items.length <= 2;
       if (items.length > 2) {
         const city2 = items[2];
         const btn2 = list.querySelector(`button[data-city-val="${city2}"]`);

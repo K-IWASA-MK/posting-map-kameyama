@@ -1,6 +1,7 @@
 # Dependencies & Cache
 node_modules/
 .vite/
+.venv/
 *.log
 
 # OS generated files
