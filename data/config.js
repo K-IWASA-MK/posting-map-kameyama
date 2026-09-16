@@ -11,7 +11,7 @@ window.PMS_CLIENT_CONFIG = {
     electionHistoryFilename: "election_history.json"
   },
   line: {
-    liffId: "2010941735-IbOXhzpJ"
+    liffId: "2010941735-lbOXhzpJ"
   },
   features: {
     photoUpload: true,
