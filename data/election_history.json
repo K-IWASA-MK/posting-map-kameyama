@@ -14,10 +14,13 @@
   "elections": [
     {
       "electionId": "COUNCIL-2022-10",
+      "electionType": "local",
       "electionName": "亀山市議会議員選挙",
       "year": "2022",
       "electionDate": "2022-10-23",
-      "national": 50.96,
+      "eligibleVoters": 39118,
+      "voters": 19936,
+      "turnout": 50.96,
       "districtTurnout": 50.96,
       "district3": 50.96,
       "municipalities": {
@@ -26,10 +29,13 @@
     },
     {
       "electionId": "COUNCIL-2018-10",
+      "electionType": "local",
       "electionName": "亀山市議会議員選挙",
       "year": "2018",
       "electionDate": "2018-10-28",
-      "national": 55.80,
+      "eligibleVoters": 39178,
+      "voters": 21861,
+      "turnout": 55.80,
       "districtTurnout": 55.80,
       "district3": 55.80,
       "municipalities": {
@@ -38,10 +44,13 @@
     },
     {
       "electionId": "COUNCIL-2014-10",
+      "electionType": "local",
       "electionName": "亀山市議会議員選挙",
       "year": "2014",
       "electionDate": "2014-10-26",
-      "national": 52.35,
+      "eligibleVoters": 38852,
+      "voters": 20338,
+      "turnout": 52.35,
       "districtTurnout": 52.35,
       "district3": 52.35,
       "municipalities": {
@@ -49,5 +58,5 @@
       }
     }
   ],
-  "lastUpdated": "2026-09-16T15:05:00+09:00"
+  "lastUpdated": "2026-09-16T16:03:00+09:00"
 }
