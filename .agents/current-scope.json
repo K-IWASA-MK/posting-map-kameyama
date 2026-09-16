@@ -50,5 +50,8 @@
   "scripts/check-pre-copy-purity.mjs",
   "scripts/test-copy-simulation.mjs",
   "package.json",
-  "docs/operations/COPY_RUNBOOK.md"
+  "docs/operations/COPY_RUNBOOK.md",
+  "active/manager/manager.js",
+  "data/town_aliases.json",
+  "scripts/generate-boundaries-geojson.py"
 ]
