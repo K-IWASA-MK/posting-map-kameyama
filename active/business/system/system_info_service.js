@@ -292,6 +292,17 @@
             }
           } catch (e) {}
         }
+        if ((opts.mapsApiKey || opts.googleMapsApiKey) && typeof (opts.mapsApiKey || opts.googleMapsApiKey) === 'string') {
+          try {
+            const props = PropertiesService.getScriptProperties();
+            if (props) {
+              const keyVal = (opts.mapsApiKey || opts.googleMapsApiKey).trim();
+              if (keyVal) {
+                props.setProperty('GOOGLE_MAPS_API_KEY', keyVal);
+              }
+            }
+          } catch (e) {}
+        }
 
         const lineConfigured = !!this.getConfigProperty('LINE_CHANNEL_ACCESS_TOKEN');
 

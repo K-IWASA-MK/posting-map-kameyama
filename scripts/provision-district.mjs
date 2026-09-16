@@ -124,6 +124,20 @@ async function main() {
     }
   }
 
+  let mapsApiKey = (process.env.POSTING_MAP_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || '').trim();
+  if (!mapsApiKey) {
+    const envPath = path.join(rootDir, '.env');
+    if (fs.existsSync(envPath)) {
+      const envText = fs.readFileSync(envPath, 'utf8');
+      for (const line of envText.split(/\r?\n/)) {
+        const matchMaps = line.match(/^\s*(?:POSTING_MAP_)?GOOGLE_MAPS_API_KEY\s*=\s*(.*)$/);
+        if (matchMaps) {
+          mapsApiKey = matchMaps[1].trim().replace(/^['"]|['"]$/g, '');
+        }
+      }
+    }
+  }
+
   const resetExistingRecords = process.argv.includes('--reset-existing-records') || process.env.RESET_EXISTING_RECORDS === 'true';
   if (resetExistingRecords) {
     console.log('⚠️  Explicit Reset Mode: resetExistingRecords is TRUE (All existing distribution records will be reset to 0%).');
@@ -144,6 +158,11 @@ async function main() {
     console.log('🔒 POSTING MAP Common LINE Configuration: Loaded from secure environment.');
   } else {
     console.log('ℹ️  POSTING MAP Common LINE Configuration: Not set in environment (Skipping LINE token provisioning).');
+  }
+
+  if (mapsApiKey) {
+    options.mapsApiKey = mapsApiKey;
+    console.log('🗺️  POSTING MAP Common Maps API Configuration: Loaded from secure environment.');
   }
 
   const payload = {
