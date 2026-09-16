@@ -170,7 +170,46 @@ async function runVerification() {
   console.log(`- ドロップダウン内項目数: ${townButtonCount} (期待値: 105: 全域+104町名)`);
   if (townButtonCount !== 105) throw new Error(`Unexpected town button count: ${townButtonCount}`);
 
-  // Screenshot 1: Dropdown Open
+  // 2.5. Geometric Boundary & Overflow Verification
+  const boundaryCheck = await mobilePage.evaluate(() => {
+    const list = document.getElementById('mobile-city-selector-list');
+    const trigger = document.getElementById('mobile-city-selector-trigger');
+    const liveContainer = document.getElementById('mobile-sync-clock')?.parentElement;
+    const listRect = list.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const liveRect = liveContainer ? liveContainer.getBoundingClientRect() : null;
+    const vpWidth = window.innerWidth;
+    const docScrollWidth = document.documentElement.scrollWidth;
+    const docClientWidth = document.documentElement.clientWidth;
+
+    return {
+      listLeft: listRect.left,
+      listRight: listRect.right,
+      listWidth: listRect.width,
+      triggerWidth: triggerRect.width,
+      vpWidth,
+      docScrollWidth,
+      docClientWidth,
+      isWithinViewport: listRect.right <= vpWidth && listRect.left >= 0,
+      hasNoHorizontalScroll: docScrollWidth <= docClientWidth,
+      noOverlapWithLive: liveRect ? listRect.right <= liveRect.left + 5 : true,
+      scrollHeight: list.scrollHeight,
+      clientHeight: list.clientHeight,
+      isInternallyScrollable: list.scrollHeight > list.clientHeight
+    };
+  });
+
+  console.log(`- リスト境界位置: left=${boundaryCheck.listLeft.toFixed(1)}px, right=${boundaryCheck.listRight.toFixed(1)}px (画面幅: ${boundaryCheck.vpWidth}px)`);
+  console.log(`- 親幅一致: listWidth=${boundaryCheck.listWidth.toFixed(1)}px, triggerWidth=${boundaryCheck.triggerWidth.toFixed(1)}px`);
+  console.log(`- 画面外はみ出し0判定 (list.right <= vp.width && list.left >= 0): ${boundaryCheck.isWithinViewport ? 'PASS (完全収容)' : 'FAIL'}`);
+  console.log(`- 横スクロール非発生判定 (scrollWidth <= clientWidth): ${boundaryCheck.hasNoHorizontalScroll ? 'PASS' : 'FAIL'}`);
+  console.log(`- 内部スクロール性: ${boundaryCheck.isInternallyScrollable ? `PASS (内部高さ: ${boundaryCheck.scrollHeight}px > 表示枠: ${boundaryCheck.clientHeight}px)` : 'FAIL'}`);
+
+  if (!boundaryCheck.isWithinViewport) throw new Error(`Dropdown overflowed viewport: right=${boundaryCheck.listRight} > ${boundaryCheck.vpWidth}`);
+  if (!boundaryCheck.hasNoHorizontalScroll) throw new Error(`Horizontal scroll detected: scrollWidth=${boundaryCheck.docScrollWidth} > clientWidth=${boundaryCheck.docClientWidth}`);
+  if (!boundaryCheck.isInternallyScrollable) throw new Error('Dropdown list is not internally scrollable');
+
+  // Screenshot 1: Dropdown Open (Perfect fit)
   const screenshot1Path = path.join(ARTIFACTS_DIR, 'mobile_town_selector_open.png');
   await mobilePage.screenshot({ path: screenshot1Path });
   console.log(`  📸 撮影: ${screenshot1Path}`);
