@@ -56,5 +56,6 @@
   "scripts/generate-boundaries-geojson.py",
   "active/api/v2_api.js",
   "scripts/safe-deploy.mjs",
-  "tests/dashboard_verification_gate.mjs"
+  "tests/dashboard_verification_gate.mjs",
+  "active/dashboard/index.html"
 ]
