@@ -54,5 +54,7 @@
   "active/manager/manager.js",
   "data/town_aliases.json",
   "scripts/generate-boundaries-geojson.py",
-  "active/api/v2_api.js"
+  "active/api/v2_api.js",
+  "scripts/safe-deploy.mjs",
+  "tests/dashboard_verification_gate.mjs"
 ]
