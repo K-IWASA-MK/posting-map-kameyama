@@ -1395,32 +1395,30 @@ function renderRightTopTurnout(selectedCity) {
     : '';
 
   containerEl.innerHTML = `
-    <div class="flex flex-col justify-between h-full">
-      <div>
-        <div class="flex items-center justify-between pb-2.5 border-b border-borderNormal">
-          <div class="flex items-center gap-1.5 text-sm font-bold text-white tracking-wide">
-            <span>🗳️</span>
-            <span>投票率データ</span>
-          </div>
-          <span class="text-xs font-bold text-brand bg-brand/10 border border-brand/20 px-2.5 py-0.5 rounded">${data.name}</span>
+    <div class="flex flex-col h-full">
+      <div class="flex items-center justify-between pb-2.5 border-b border-borderNormal">
+        <div class="flex items-center gap-1.5 text-sm font-bold text-white tracking-wide">
+          <span>🗳️</span>
+          <span>投票率データ</span>
         </div>
-
-        <div class="mt-3">
-          <div class="flex items-center justify-between">
-            <div class="text-[28px] font-mono font-bold text-white tracking-tight leading-none">
-              ${data.turnout}<span class="text-base font-normal text-textSub ml-0.5">%</span>
-            </div>
-            <div class="text-right flex-shrink-0">
-              ${diffBadgeHtml}
-            </div>
-          </div>
-          <div class="text-xs text-textSub mt-1.5 font-medium truncate" title="${data.electionName} (${data.electionDate})">
-            ${data.electionName} <span class="font-mono">(${data.electionDate})</span>
-          </div>
-        </div>
-
-        ${subInfoHtml}
+        <span class="text-xs font-bold text-brand bg-brand/10 border border-brand/20 px-2.5 py-0.5 rounded">${data.name}</span>
       </div>
+
+      <div class="mt-3">
+        <div class="flex items-center justify-between">
+          <div class="text-[28px] font-mono font-bold text-white tracking-tight leading-none">
+            ${data.turnout}<span class="text-base font-normal text-textSub ml-0.5">%</span>
+          </div>
+          <div class="text-right flex-shrink-0">
+            ${diffBadgeHtml}
+          </div>
+        </div>
+        <div class="text-xs text-textSub mt-1.5 font-medium truncate" title="${data.electionName} (${data.electionDate})">
+          ${data.electionName} <span class="font-mono">(${data.electionDate})</span>
+        </div>
+      </div>
+
+      ${subInfoHtml}
 
       ${historyHtml}
     </div>
