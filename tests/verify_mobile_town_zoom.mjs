@@ -249,20 +249,53 @@ async function runVerification() {
   if (!verticalCheck.exactHeightMatch) throw new Error(`dropdown.height (${verticalCheck.dropdownHeight}) !== KPI.height (${verticalCheck.kpiHeight})`);
   if (!verticalCheck.noMapPenetration) throw new Error(`MAP penetration detected: dropdown.bottom (${verticalCheck.dropdownBottom}) >= MAP.top (${verticalCheck.mapTop})`);
 
+  // 2.7. Alphabetical Order Verification (Iris-cho first, Wada-cho last)
+  const orderCheck = await mobilePage.evaluate(() => {
+    const list = document.getElementById('mobile-city-selector-list');
+    const buttons = Array.from(list.querySelectorAll('button[data-town-id]'));
+    const items = buttons.map(b => ({
+      id: b.getAttribute('data-town-id'),
+      name: b.querySelector('span:first-child')?.textContent?.trim() || ''
+    }));
+    return {
+      total: items.length,
+      first: items[0],       // ALL
+      second: items[1],      // First town
+      third: items[2],       // Second town
+      last: items[items.length - 1], // Last town
+      allItems: items
+    };
+  });
+
+  console.log(`\n🔤 [ALPHABETICAL ORDER AUDIT]`);
+  console.log(`- 先頭項目 (全体): "${orderCheck.first.name}" (ID: ${orderCheck.first.id}) [期待値: ALL]`);
+  console.log(`- 町名第1位: "${orderCheck.second.name}" (ID: ${orderCheck.second.id}) [期待値: アイリス町 (rowId 1)]`);
+  console.log(`- 町名第2位: "${orderCheck.third.name}" (ID: ${orderCheck.third.id}) [期待値: 安坂山町 (rowId 2)]`);
+  console.log(`- 町名末尾:  "${orderCheck.last.name}" (ID: ${orderCheck.last.id}) [期待値: 和田町 (rowId 104)]`);
+
+  if (orderCheck.first.id !== 'ALL') throw new Error(`First item is not ALL: ${orderCheck.first.id}`);
+  if (orderCheck.second.name !== 'アイリス町' || orderCheck.second.id !== '1') {
+    throw new Error(`Second item is not アイリス町: ${JSON.stringify(orderCheck.second)}`);
+  }
+  if (orderCheck.last.name !== '和田町' || orderCheck.last.id !== '104') {
+    throw new Error(`Last item is not 和田町: ${JSON.stringify(orderCheck.last)}`);
+  }
+  console.log('✅ 五十音順検証 PASS (先頭: アイリス町, 末尾: 和田町)');
+
   // Screenshot 1: Dropdown Open (Perfect fit with KPI height)
   const screenshot1Path = path.join(ARTIFACTS_DIR, 'mobile_town_selector_open.png');
   await mobilePage.screenshot({ path: screenshot1Path });
   console.log(`  📸 撮影: ${screenshot1Path}`);
 
-  // 3. Test 東町一丁目 (rowId 1)
-  console.log('\n--- 1. 東町一丁目 ズーム検証 ---');
+  // 3. Test アイリス町 (rowId 1 - 五十音順先頭)
+  console.log('\n--- 1. アイリス町 (rowId 1: 五十音順先頭) ズーム検証 ---');
   await mobilePage.evaluate(() => {
     const btn = document.querySelector('#mobile-city-selector-list button[data-town-id="1"]');
     if (btn) btn.click();
   });
   await mobilePage.waitForTimeout(800);
 
-  const higashimachiState = await mobilePage.evaluate(() => {
+  const irisState = await mobilePage.evaluate(() => {
     const list = document.getElementById('mobile-city-selector-list');
     const label = document.getElementById('mobile-city-selector-current')?.textContent;
     const center = window.DashboardState.map.getCenter();
@@ -270,54 +303,24 @@ async function runVerification() {
     const isHidden = list.classList.contains('hidden');
     return { label, lat: center.lat, lng: center.lng, zoom, isHidden };
   });
-  console.log(`- ラベル: "${higashimachiState.label}" (期待値: "東町一丁目")`);
-  console.log(`- ドロップダウン自動閉止: ${higashimachiState.isHidden ? 'CLOSED (PASS)' : 'FAIL'}`);
-  console.log(`- マップ中心座標: lat ${higashimachiState.lat.toFixed(6)}, lng ${higashimachiState.lng.toFixed(6)}, zoom: ${higashimachiState.zoom}`);
-  console.log(`- 期待座標: lat 34.854279, lng 136.455304, zoom: 16`);
-  const dLat1 = Math.abs(higashimachiState.lat - 34.854279);
-  const dLng1 = Math.abs(higashimachiState.lng - 136.455304);
-  if (dLat1 > 0.001 || dLng1 > 0.001 || higashimachiState.zoom !== 16) throw new Error('東町一丁目 zoom mismatch');
+  console.log(`- ラベル: "${irisState.label}" (期待値: "アイリス町")`);
+  console.log(`- ドロップダウン自動閉止: ${irisState.isHidden ? 'CLOSED (PASS)' : 'FAIL'}`);
+  console.log(`- マップ中心座標: lat ${irisState.lat.toFixed(6)}, lng ${irisState.lng.toFixed(6)}, zoom: ${irisState.zoom}`);
+  console.log(`- 期待座標: lat 34.869662, lng 136.457652, zoom: 16`);
+  const dLat1 = Math.abs(irisState.lat - 34.869662);
+  const dLng1 = Math.abs(irisState.lng - 136.457652);
+  if (dLat1 > 0.001 || dLng1 > 0.001 || irisState.zoom !== 16) throw new Error('アイリス町 zoom mismatch');
 
-  const screenshot2Path = path.join(ARTIFACTS_DIR, 'mobile_higashimachi_zoomed.png');
+  const screenshot2Path = path.join(ARTIFACTS_DIR, 'mobile_iris_zoomed.png');
   await mobilePage.screenshot({ path: screenshot2Path });
   console.log(`  📸 撮影: ${screenshot2Path}`);
 
-  // 4. Test 野村一丁目 (rowId 23)
-  console.log('\n--- 2. 野村一丁目 ズーム検証 ---');
+  // 4. Test 天神一丁目 (rowId 61)
+  console.log('\n--- 2. 天神一丁目 (rowId 61) ズーム検証 ---');
   await mobilePage.click('#mobile-city-selector-trigger');
   await mobilePage.waitForTimeout(300);
   await mobilePage.evaluate(() => {
-    const btn = document.querySelector('#mobile-city-selector-list button[data-town-id="23"]');
-    if (btn) btn.click();
-  });
-  await mobilePage.waitForTimeout(800);
-
-  const nomuraState = await mobilePage.evaluate(() => {
-    const list = document.getElementById('mobile-city-selector-list');
-    const label = document.getElementById('mobile-city-selector-current')?.textContent;
-    const center = window.DashboardState.map.getCenter();
-    const zoom = window.DashboardState.map.getZoom();
-    const isHidden = list.classList.contains('hidden');
-    return { label, lat: center.lat, lng: center.lng, zoom, isHidden };
-  });
-  console.log(`- ラベル: "${nomuraState.label}" (期待値: "野村一丁目")`);
-  console.log(`- ドロップダウン自動閉止: ${nomuraState.isHidden ? 'CLOSED (PASS)' : 'FAIL'}`);
-  console.log(`- マップ中心座標: lat ${nomuraState.lat.toFixed(6)}, lng ${nomuraState.lng.toFixed(6)}, zoom: ${nomuraState.zoom}`);
-  console.log(`- 期待座標: lat 34.860032, lng 136.443018, zoom: 16`);
-  const dLat2 = Math.abs(nomuraState.lat - 34.860032);
-  const dLng2 = Math.abs(nomuraState.lng - 136.443018);
-  if (dLat2 > 0.001 || dLng2 > 0.001 || nomuraState.zoom !== 16) throw new Error('野村一丁目 zoom mismatch');
-
-  const screenshot3Path = path.join(ARTIFACTS_DIR, 'mobile_nomura_zoomed.png');
-  await mobilePage.screenshot({ path: screenshot3Path });
-  console.log(`  📸 撮影: ${screenshot3Path}`);
-
-  // 5. Test 天神一丁目 (rowId 36)
-  console.log('\n--- 3. 天神一丁目 ズーム検証 ---');
-  await mobilePage.click('#mobile-city-selector-trigger');
-  await mobilePage.waitForTimeout(300);
-  await mobilePage.evaluate(() => {
-    const btn = document.querySelector('#mobile-city-selector-list button[data-town-id="36"]');
+    const btn = document.querySelector('#mobile-city-selector-list button[data-town-id="61"]');
     if (btn) btn.click();
   });
   await mobilePage.waitForTimeout(800);
@@ -334,11 +337,41 @@ async function runVerification() {
   console.log(`- ドロップダウン自動閉止: ${tenjinState.isHidden ? 'CLOSED (PASS)' : 'FAIL'}`);
   console.log(`- マップ中心座標: lat ${tenjinState.lat.toFixed(6)}, lng ${tenjinState.lng.toFixed(6)}, zoom: ${tenjinState.zoom}`);
   console.log(`- 期待座標: lat 34.846369, lng 136.455245, zoom: 16`);
-  const dLat3 = Math.abs(tenjinState.lat - 34.846369);
-  const dLng3 = Math.abs(tenjinState.lng - 136.455245);
-  if (dLat3 > 0.001 || dLng3 > 0.001 || tenjinState.zoom !== 16) throw new Error('天神一丁目 zoom mismatch');
+  const dLat2 = Math.abs(tenjinState.lat - 34.846369);
+  const dLng2 = Math.abs(tenjinState.lng - 136.455245);
+  if (dLat2 > 0.001 || dLng2 > 0.001 || tenjinState.zoom !== 16) throw new Error('天神一丁目 zoom mismatch');
 
-  const screenshot4Path = path.join(ARTIFACTS_DIR, 'mobile_tenjin_zoomed.png');
+  const screenshot3Path = path.join(ARTIFACTS_DIR, 'mobile_tenjin_zoomed.png');
+  await mobilePage.screenshot({ path: screenshot3Path });
+  console.log(`  📸 撮影: ${screenshot3Path}`);
+
+  // 5. Test 和田町 (rowId 104 - 五十音順末尾)
+  console.log('\n--- 3. 和田町 (rowId 104: 五十音順末尾) ズーム検証 ---');
+  await mobilePage.click('#mobile-city-selector-trigger');
+  await mobilePage.waitForTimeout(300);
+  await mobilePage.evaluate(() => {
+    const btn = document.querySelector('#mobile-city-selector-list button[data-town-id="104"]');
+    if (btn) btn.click();
+  });
+  await mobilePage.waitForTimeout(800);
+
+  const wadaState = await mobilePage.evaluate(() => {
+    const list = document.getElementById('mobile-city-selector-list');
+    const label = document.getElementById('mobile-city-selector-current')?.textContent;
+    const center = window.DashboardState.map.getCenter();
+    const zoom = window.DashboardState.map.getZoom();
+    const isHidden = list.classList.contains('hidden');
+    return { label, lat: center.lat, lng: center.lng, zoom, isHidden };
+  });
+  console.log(`- ラベル: "${wadaState.label}" (期待値: "和田町")`);
+  console.log(`- ドロップダウン自動閉止: ${wadaState.isHidden ? 'CLOSED (PASS)' : 'FAIL'}`);
+  console.log(`- マップ中心座標: lat ${wadaState.lat.toFixed(6)}, lng ${wadaState.lng.toFixed(6)}, zoom: ${wadaState.zoom}`);
+  console.log(`- 期待座標: lat 34.860038, lng 136.483488, zoom: 16`);
+  const dLat3 = Math.abs(wadaState.lat - 34.860038);
+  const dLng3 = Math.abs(wadaState.lng - 136.483488);
+  if (dLat3 > 0.001 || dLng3 > 0.001 || wadaState.zoom !== 16) throw new Error('和田町 zoom mismatch');
+
+  const screenshot4Path = path.join(ARTIFACTS_DIR, 'mobile_wada_zoomed.png');
   await mobilePage.screenshot({ path: screenshot4Path });
   console.log(`  📸 撮影: ${screenshot4Path}`);
 
@@ -421,14 +454,33 @@ async function runVerification() {
   });
   console.log(`- PCエリアセレクター項目数: ${pcTownCount} (期待値: 105)`);
 
-  // PC click 東町一丁目
+  const pcOrderCheck = await pcPage.evaluate(() => {
+    const list = document.getElementById('area-selector-list');
+    const buttons = Array.from(list.querySelectorAll('button[data-town-id]'));
+    const items = buttons.map(b => ({
+      id: b.getAttribute('data-town-id'),
+      name: b.querySelector('span:first-child')?.textContent?.trim() || ''
+    }));
+    return {
+      first: items[0],
+      second: items[1],
+      last: items[items.length - 1]
+    };
+  });
+  console.log(`- PC 町名第1位: "${pcOrderCheck.second.name}" (ID: ${pcOrderCheck.second.id}) [期待値: アイリス町 (rowId 1)]`);
+  console.log(`- PC 町名末尾:  "${pcOrderCheck.last.name}" (ID: ${pcOrderCheck.last.id}) [期待値: 和田町 (rowId 104)]`);
+  if (pcOrderCheck.second.name !== 'アイリス町' || pcOrderCheck.last.name !== '和田町') {
+    throw new Error('PC town selector order mismatch');
+  }
+
+  // PC click アイリス町 (rowId 1)
   await pcPage.evaluate(() => {
     const btn = document.querySelector('#area-selector-list button[data-town-id="1"]');
     btn?.click();
   });
   await pcPage.waitForTimeout(800);
-  const pcHigashiZoom = await pcPage.evaluate(() => window.DashboardState.map.getZoom());
-  console.log(`- PC 東町一丁目クリック後ズーム: ${pcHigashiZoom} (期待値: 16)`);
+  const pcIrisZoom = await pcPage.evaluate(() => window.DashboardState.map.getZoom());
+  console.log(`- PC アイリス町クリック後ズーム: ${pcIrisZoom} (期待値: 16)`);
 
   const screenshotPcPath = path.join(ARTIFACTS_DIR, 'pc_town_selector_zoomed.png');
   await pcPage.screenshot({ path: screenshotPcPath });
