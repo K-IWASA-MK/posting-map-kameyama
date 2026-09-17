@@ -361,7 +361,8 @@ const features = boundsRaw.features || [];
     'municipality_master.csv',
     'election_history.json',
     'config.js',
-    'area_mapping.json'
+    'area_mapping.json',
+    'storage_locations.json'
   ]);
 
   if (fs.existsSync(dataDir)) {

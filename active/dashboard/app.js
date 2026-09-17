@@ -794,6 +794,34 @@ function updateStorageLocationDisplayText() {
   }
 }
 
+let _storageLocationsCache = null;
+let _storageLocationsFetching = null;
+
+async function getStorageLocations() {
+  if (_storageLocationsCache) return _storageLocationsCache;
+  if (_storageLocationsFetching) return _storageLocationsFetching;
+
+  _storageLocationsFetching = (async () => {
+    try {
+      const res = await fetch('../../data/storage_locations.json');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          _storageLocationsCache = data;
+          return _storageLocationsCache;
+        }
+      }
+    } catch (e) {
+      console.warn('[Storage] Fallback to tier1Cache:', e);
+    } finally {
+      _storageLocationsFetching = null;
+    }
+    return null;
+  })();
+
+  return _storageLocationsFetching;
+}
+
 window.updateStorageLocationDropdown = function updateStorageLocationDropdown(overrideCities = null) {
   const locSelect = $('storage-register-location');
   if (!locSelect) return;
@@ -805,9 +833,13 @@ window.updateStorageLocationDropdown = function updateStorageLocationDropdown(ov
     });
   }
 
-  const targetCities = (Array.isArray(overrideCities) && overrideCities.length > 0)
-    ? overrideCities
-    : (Array.isArray(tier1Cache) && tier1Cache.length > 0 ? tier1Cache : null);
+  const prevValue = locSelect.value;
+
+  const customCities = (Array.isArray(_storageLocationsCache) && _storageLocationsCache.length > 0)
+    ? _storageLocationsCache
+    : (Array.isArray(overrideCities) && overrideCities.length > 0 ? overrideCities : null);
+
+  const targetCities = customCities || (Array.isArray(tier1Cache) && tier1Cache.length > 0 ? tier1Cache : null);
 
   locSelect.innerHTML = '';
   const cityList = [];
@@ -836,6 +868,10 @@ window.updateStorageLocationDropdown = function updateStorageLocationDropdown(ov
     opt.textContent = city;
     locSelect.appendChild(opt);
   });
+
+  if (prevValue && cityList.includes(prevValue)) {
+    locSelect.value = prevValue;
+  }
 
   updateStorageLocationDisplayText();
 };
@@ -885,6 +921,13 @@ function initStorageRegisterPage() {
   const countInput = $('storage-register-count');
 
   updateStorageLocationDropdown();
+  if (!_storageLocationsCache) {
+    getStorageLocations().then(cities => {
+      if (cities && Array.isArray(cities) && cities.length > 0) {
+        updateStorageLocationDropdown(cities);
+      }
+    });
+  }
 
   if (staffId && countInput) {
     callApiPost('getFlyerStock').then(data => {
