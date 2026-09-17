@@ -59,5 +59,7 @@
   "tests/dashboard_verification_gate.mjs",
   "active/dashboard/index.html",
   "active/dashboard/app.js",
-  "data/storage_locations.json"
+  "data/storage_locations.json",
+  "docs/architecture/CURRENT_ARCHITECTURE.md",
+  ".agents/rules/district-data-transition-rule.md"
 ]
